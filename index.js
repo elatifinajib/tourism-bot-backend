@@ -7,20 +7,30 @@ app.use(bodyParser.json());
 
 app.post('/webhook', async (req, res) => {
   try {
-    const response = await axios.get('https://touristeproject.onrender.com/api/public/getAll/Attraction');
-    const attractions = response.data;
+    const intentName = req.body.queryResult.intent.displayName;
 
-    if (!attractions.length) {
-      return res.json({ fulfillmentText: 'Aucune attraction trouvée.' });
-    }
+    if (intentName === 'Ask_All_Attractions') {
+  const response = await axios.get('https://touristeproject.onrender.com/api/public/getAll/Attraction');
+  const attractions = response.data;
 
-    const names = attractions.map(a => a.name).slice(0, 5).join(', ');
-    const reply = `Voici quelques attractions : ${names}`;
+  if (!Array.isArray(attractions) || attractions.length === 0) {
+    return res.json({ fulfillmentText: 'Aucune attraction trouvée.' });
+  }
 
-    res.json({ fulfillmentText: reply });
-  } catch (err) {
-    console.error(err);
-    res.json({ fulfillmentText: 'Erreur lors de la récupération des attractions.' });
+  // Stocker les résultats en mémoire temporaire (ici : on prend toujours les 5 premiers pour l'exemple)
+  const firstFive = attractions.slice(0, 5)
+    .map((a, index) => `- ${a.name}`)
+    .join('\n');
+
+  const reply = `Voici quelques attractions :\n${firstFive}\n\nVoulez-vous en voir plus ?`;
+
+  return res.json({ fulfillmentText: reply });
+}
+
+
+  } catch (error) {
+    console.error('Erreur webhook:', error.message);
+    return res.json({ fulfillmentText: 'Erreur lors de la récupération des attractions.' });
   }
 });
 
