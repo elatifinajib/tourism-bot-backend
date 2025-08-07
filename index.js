@@ -5,15 +5,15 @@ const axios = require('axios');
 const app = express();
 app.use(bodyParser.json());
 
-// Fonction pour normaliser le texte (minuscule et suppression des accents)
+// Function to normalize text (lowercase and remove accents)
 const normalizeString = (str) => {
   return str
-    .toLowerCase() // Mettre tout en minuscule
-    .normalize('NFD') // Normalisation Unicode
-    .replace(/[\u0300-\u036f]/g, ''); // Supprimer les accents
+    .toLowerCase() // Make everything lowercase
+    .normalize('NFD') // Unicode normalization
+    .replace(/[\u0300-\u036f]/g, ''); // Remove accents
 };
 
-// Webhook principal
+// Main webhook
 app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body.queryResult.intent.displayName;
@@ -24,14 +24,14 @@ app.post('/webhook', async (req, res) => {
       const attractions = response.data;
 
       if (!Array.isArray(attractions) || attractions.length === 0) {
-        return res.json({ fulfillmentText: 'Aucune attraction trouvée.' });
+        return res.json({ fulfillmentText: "I couldn't find any attractions for you. data base is empty!" });
       }
 
-      // Stocker l'état de la page
+      // Show the first 5 attractions
       const firstFive = attractions.slice(0, 5).map(a => `- ${a.name}`).join('\n');
-      const reply = `Voici quelques attractions :\n${firstFive}\n\nVoulez-vous en voir plus ?`;
+      const reply = `Here are some attractions:\n${firstFive}\n\nWould you like to see more?`;
 
-      // Créer un contexte pour savoir que la page 1 a été affichée
+      // Create context to keep track of the current page
       return res.json({
         fulfillmentText: reply,
         outputContexts: [
@@ -46,21 +46,21 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    if (intentName === 'Voir_plus_attractions') {
+    if (intentName === 'See_more_attractions') {
       const response = await axios.get('https://touristeproject.onrender.com/api/public/getAll/Attraction');
       const attractions = response.data;
 
       if (!Array.isArray(attractions) || attractions.length <= 5) {
-        return res.json({ fulfillmentText: 'Il n’y a pas plus d’attractions à afficher.' });
+        return res.json({ fulfillmentText: "There are no more attractions to show.data base only have this!" });
       }
 
-      // Vérifier la page courante dans le contexte
+      // Check current page from context
       const currentPage = context ? context.parameters.page : 1;
       const nextFive = attractions.slice(currentPage * 5, (currentPage + 1) * 5).map(a => `- ${a.name}`).join('\n');
 
-      // Mettre à jour la page
+      // Update the page
       const newPage = currentPage + 1;
-      const reply = `Voici d’autres attractions :\n${nextFive}`;
+      const reply = `Here are some more attractions:\n${nextFive}`;
 
       return res.json({
         fulfillmentText: reply,
@@ -79,28 +79,28 @@ app.post('/webhook', async (req, res) => {
     if (intentName === 'Ask_Attraction_Details') {
       const attractionName = req.body.queryResult.parameters['attraction_name'];
 
-      // Récupérer toutes les attractions
+      // Get all attractions
       const response = await axios.get('https://touristeproject.onrender.com/api/public/getAll/Attraction');
       const attractions = response.data;
 
-      // Normaliser le nom d'attraction entré par l'utilisateur
+      // Normalize the entered attraction name
       const normalizedAttractionName = normalizeString(attractionName);
       const attraction = attractions.find(a => normalizeString(a.name) === normalizedAttractionName);
 
       if (!attraction) {
-        return res.json({ fulfillmentText: `Je n'ai trouvé aucune attraction nommée "${attractionName}". Si tu peux essayer d'écrire un nom correct de l'attraction.` });
+        return res.json({ fulfillmentText: `Sorry, I couldn't find an attraction named "${attractionName}". Maybe try typing the name more correctly?` });
       }
 
       const id = attraction.id_Location;
       const detailRes = await axios.get(`https://touristeproject.onrender.com/api/public/getLocationById/${id}`);
       const details = detailRes.data;
 
-      // Construire la réponse avec le nom, la ville, et la description
+      // Build the response with name, city, and description
       const reply = {
-        fulfillmentText: `Détails de ${details.name} (${details.cityName}) :\n📍 Ville : ${details.cityName}\n💰 Entrée : ${details.entryFee}\n📖 Description : ${details.description}`,
+        fulfillmentText: `Here are the details for ${details.name} (${details.cityName}):\n📍 City: ${details.cityName}\n💰 Entry Fee: ${details.entryFee}\n📖 Description: ${details.description}`,
         fulfillmentMessages: [
           {
-            platform: "ACTIONS_ON_GOOGLE", // Pour l'affichage sur l'app mobile
+            platform: "ACTIONS_ON_GOOGLE", // For mobile app display
             payload: {
               google: {
                 "richResponse": {
@@ -108,9 +108,9 @@ app.post('/webhook', async (req, res) => {
                     {
                       "carouselBrowse": {
                         "items": details.images.map(image => ({
-                          "title": `Image de ${details.name}`,
+                          "title": `Image of ${details.name}`,
                           "openUrlAction": {
-                            "url": image  // URL de l'image à afficher dans le carrousel
+                            "url": image  // URL of the image to display in the carousel
                           }
                         }))
                       }
@@ -128,16 +128,16 @@ app.post('/webhook', async (req, res) => {
                   "items": [
                     {
                       "simpleResponse": {
-                        "textToSpeech": `Voir ${details.name} sur la carte`
+                        "textToSpeech": `See ${details.name} on the map.`
                       }
                     },
                     {
                       "suggestions": {
                         "suggestions": [
                           {
-                            "title": "Voir sur la carte",
+                            "title": "View on the map",
                             "action": {
-                              "url": `https://www.google.com/maps?q=${details.latitude},${details.longitude}` // Lien vers Google Maps
+                              "url": `https://www.google.com/maps?q=${details.latitude},${details.longitude}` // Link to Google Maps
                             }
                           }
                         ]
@@ -154,17 +154,17 @@ app.post('/webhook', async (req, res) => {
       return res.json(reply);
     }
 
-    // Réponse par défaut si aucun intent reconnu
-    return res.json({ fulfillmentText: "Je n'ai pas compris votre demande." });
+    // Default response if no intent recognized
+    return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
 
   } catch (error) {
-    console.error('Erreur webhook:', error.message);
-    return res.json({ fulfillmentText: 'Erreur lors de la récupération des attractions.' });
+    console.error('Webhook error:', error.message);
+    return res.json({ fulfillmentText: 'Error retrieving attractions.' });
   }
 });
 
-// Lancer le serveur
+// Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Webhook actif sur http://localhost:${PORT}`);
+  console.log(`Webhook is running on http://localhost:${PORT}`);
 });
