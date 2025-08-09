@@ -21,21 +21,16 @@ app.post('/webhook', async (req, res) => {
         return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
       }
 
-      // Création de la réponse en plusieurs messages séparés
-      const messages = attractions.map(a => {
-        return { text: { text: [`- ${a.name} (${a.cityName})`] } };
-      });
+      // On liste toutes les attractions avec un retour à la ligne HTML <br> entre chaque
+      const list = attractions.map(a => `- ${a.name} (${a.cityName})`).join('<br>');
+      const reply = `Here are the attractions:<br>${list}`;
 
-      // Ajouter un message introductif
-      const reply = {
-        fulfillmentText: "Here are the attractions:",
+      return res.json({
+        fulfillmentText: reply,
         fulfillmentMessages: [
-          { text: { text: ["Here are the attractions:"] } },
-          ...messages, // Inclure les messages d'attractions
+          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
         ]
-      };
-
-      return res.json(reply);
+      });
     }
 
     // Réponse par défaut
