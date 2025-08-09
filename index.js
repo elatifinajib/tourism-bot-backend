@@ -22,9 +22,9 @@ app.post('/webhook', async (req, res) => {
         return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
       }
 
-      // On liste toutes les attractions
-      const list = attractions.map(a => `- ${a.name}`).join('\n');
-      const reply = `Here are the attractions:\n${list}`;
+      // On liste toutes les attractions avec un double saut de ligne entre chaque
+      const list = attractions.map(a => `- ${a.name}`).join('\n\n');
+      const reply = `Here are the attractions:\n\n${list}`;
 
       return res.json({
         fulfillmentText: reply,
