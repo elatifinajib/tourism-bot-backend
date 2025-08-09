@@ -21,9 +21,29 @@ app.post('/webhook', async (req, res) => {
         return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
       }
 
-      // On liste toutes les attractions avec le symbole d'attraction et le format souhaité
-      const list = attractions.map(a => `          🌟 ${a.name} (${a.cityName})`).join('\n');
+      // On liste toutes les attractions avec le symbole d'attraction
+      const list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
       const reply = `Here are the attractions:\n${list}`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Natural_Attractions"
+    if (intentName === 'Ask_Natural_Attractions') {
+      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/getAll/NaturalAttraction`);
+
+      if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any natural attractions for you." });
+      }
+
+      // On liste toutes les attractions naturelles avec le symbole d'attraction naturelle
+      const list = naturalAttractions.map(a => `🌿 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are some natural attractions:\n${list}`;
 
       return res.json({
         fulfillmentText: reply,
