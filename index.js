@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -22,7 +23,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       // On liste toutes les attractions avec un double saut de ligne entre chaque
-      const list = attractions.map(a => `- ${a.city} (${a.name})`).join('\n\n');
+      const list = attractions.map(a => `- ${a.name}`).join('\n\n');
       const reply = `Here are the attractions:\n\n${list}`;
 
       return res.json({
