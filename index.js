@@ -12,99 +12,113 @@ const BASE_URL = 'https://touristeproject.onrender.com/api/public';
 app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
-    const contexts = req.body?.queryResult?.outputContexts; // Récupérer les contextes
-
-    let reply = '';
-    let list = '';
 
     // Si l'intent est "Ask_All_Attractions"
     if (intentName === 'Ask_All_Attractions') {
       const { data: attractions } = await axios.get(`${BASE_URL}/getAll/Attraction`);
 
       if (!Array.isArray(attractions) || attractions.length === 0) {
-        reply = "I couldn't find any attractions for you.";
-      } else {
-        list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
-        reply = `Here are the attractions:\n${list}`;
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any attractions for you." });
       }
 
-      // Définir le contexte "attractions_requested"
-      return res.json({
-        fulfillmentText: reply,
-        outputContexts: [
-          {
-            name: `${req.body.session}/contexts/attractions_requested`,
-            lifespanCount: 5, // Le contexte dure pour 5 tours
-            parameters: {
-              last_attraction: 'all' // Marque que l'utilisateur a demandé les attractions générales
-            }
-          }
-        ]
-      });
-    }
-
-    // Si l'intent est "Ask_Historical_Attractions"
-    if (intentName === 'Ask_Historical_Attractions') {
-      const { data: historicalAttractions } = await axios.get(`${BASE_URL}/getAll/HistoricalAttraction`);
-
-      if (!Array.isArray(historicalAttractions) || historicalAttractions.length === 0) {
-        reply = "I couldn't find any historical attractions for you.";
-      } else {
-        list = historicalAttractions.map(a => `🏛️ ${a.name} (${a.cityName})`).join('\n');
-        reply = `Here are some historical attractions:\n${list}`;
-      }
-
-      // Vérifier si un contexte est défini pour une attraction précédente (All Attractions par exemple)
-      if (contexts && contexts.some(context => context.name.includes('attractions_requested') && context.parameters.last_attraction === 'all')) {
-        reply = `You previously asked for all attractions. Now I’m showing you the historical ones.\n${reply}`;
-      }
+      // On liste toutes les attractions avec le symbole d'attraction
+      const list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Discover the best attractions around! Here are some of the top spots:\n${list}\n`;
 
       return res.json({
         fulfillmentText: reply,
-        outputContexts: [
-          {
-            name: `${req.body.session}/contexts/attractions_requested`,
-            lifespanCount: 5,
-            parameters: {
-              last_attraction: 'historical' // Marque que l'utilisateur a demandé les attractions historiques
-            }
-          }
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
         ]
       });
     }
 
     // Si l'intent est "Ask_Natural_Attractions"
     if (intentName === 'Ask_Natural_Attractions') {
-      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/getAll/NaturalAttraction`);
+      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/NaturalAttractions`);
 
       if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
-        reply = "I couldn't find any natural attractions for you.";
-      } else {
-        list = naturalAttractions.map(a => `🌿 ${a.name} (${a.cityName})`).join('\n');
-        reply = `Here are some natural attractions:\n${list}`;
+        return res.json({ fulfillmentText: "I couldn't find any natural wonders for you." });
       }
 
-      // Mise à jour du contexte
+      // On liste toutes les attractions naturelles avec le symbole d'attraction naturelle
+      const list = naturalAttractions.map(a => `🌿 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `If you love nature, you're in for a treat! Check out these amazing natural attractions:\n${list}\n`;
+
       return res.json({
         fulfillmentText: reply,
-        outputContexts: [
-          {
-            name: `${req.body.session}/contexts/attractions_requested`,
-            lifespanCount: 5,
-            parameters: {
-              last_attraction: 'natural' // Marque que l'utilisateur a demandé des attractions naturelles
-            }
-          }
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Historical_Attractions"
+    if (intentName === 'Ask_Historical_Attractions') {
+      const { data: historicalAttractions } = await axios.get(`${BASE_URL}/HistoricalAttractions`);
+
+      if (!Array.isArray(historicalAttractions) || historicalAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any historical attractions for you." });
+      }
+
+      // On liste toutes les attractions historiques avec le symbole d'attraction historique
+      const list = historicalAttractions.map(a => `🏛️ ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Step back in time and explore some incredible historical sites! Here are some top recommendations:\n${list}\n`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Cultural_Attractions"
+    if (intentName === 'Ask_Cultural_Attractions') {
+      const { data: culturalAttractions } = await axios.get(`${BASE_URL}/CulturalAttractions`);
+
+      if (!Array.isArray(culturalAttractions) || culturalAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any cultural attractions for you." });
+      }
+
+      // On liste toutes les attractions culturelles avec le symbole d'attraction culturelle
+      const list = culturalAttractions.map(a => `🎭 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Get ready to immerse yourself in rich culture! Here are some of the best cultural attractions:\n${list}\n`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Artificial_Attractions"
+    if (intentName === 'Ask_Artificial_Attractions') {
+      const { data: artificialAttractions } = await axios.get(`${BASE_URL}/ArtificialAttractions`);
+
+      if (!Array.isArray(artificialAttractions) || artificialAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any artificial attractions for you." });
+      }
+
+      // On liste toutes les attractions artificielles avec le symbole d'attraction artificielle
+      const list = artificialAttractions.map(a => `🏙️ ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Check out these stunning artificial wonders! Here's what you can explore:\n${list}\n`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
         ]
       });
     }
 
     // Réponse par défaut
-    return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
+    return res.json({ fulfillmentText: "I'm sorry, I couldn't quite understand that. Let me know what you're looking for, and I'll help you find the best tourist spots!" });
 
   } catch (error) {
     console.error('Webhook error:', error?.message);
-    return res.json({ fulfillmentText: 'Error retrieving attractions.' });
+    return res.json({ fulfillmentText: 'Oops, something went wrong while fetching attractions. Please try again later!' });
   }
 });
 
