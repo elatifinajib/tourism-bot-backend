@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -22,9 +21,9 @@ app.post('/webhook', async (req, res) => {
         return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
       }
 
-      // On liste toutes les attractions avec un double saut de ligne entre chaque
-      const list = attractions.map(a => `- ${a.name}`).join('\n\n');
-      const reply = `Here are the attractions:\n\n${list}`;
+      // On liste toutes les attractions avec le format souhaité
+      const list = attractions.map(a => `- ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are the attractions:\n${list}`;
 
       return res.json({
         fulfillmentText: reply,
