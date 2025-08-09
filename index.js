@@ -35,7 +35,7 @@ app.post('/webhook', async (req, res) => {
 
     // Si l'intent est "Ask_Natural_Attractions"
     if (intentName === 'Ask_Natural_Attractions') {
-      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/getAll/NaturalAttraction`);
+      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/NaturalAttractions`);
 
       if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
         return res.json({ fulfillmentText: "I couldn't find any natural attractions for you." });
@@ -64,6 +64,46 @@ app.post('/webhook', async (req, res) => {
       // On liste toutes les attractions historiques avec le symbole d'attraction historique
       const list = historicalAttractions.map(a => `🏛️ ${a.name} (${a.cityName})`).join('\n');
       const reply = `Here are some historical attractions:\n${list}`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Cultural_Attractions"
+    if (intentName === 'Ask_Cultural_Attractions') {
+      const { data: culturalAttractions } = await axios.get(`${BASE_URL}/CulturalAttractions`);
+
+      if (!Array.isArray(culturalAttractions) || culturalAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any cultural attractions for you." });
+      }
+
+      // On liste toutes les attractions culturelles avec le symbole d'attraction culturelle
+      const list = culturalAttractions.map(a => `🎭 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are some cultural attractions:\n${list}`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Artificial_Attractions"
+    if (intentName === 'Ask_Artificial_Attractions') {
+      const { data: artificialAttractions } = await axios.get(`${BASE_URL}/ArtificialAttractions`);
+
+      if (!Array.isArray(artificialAttractions) || artificialAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any artificial attractions for you." });
+      }
+
+      // On liste toutes les attractions artificielles avec le symbole d'attraction artificielle
+      const list = artificialAttractions.map(a => `🏙️ ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are some artificial attractions:\n${list}`;
 
       return res.json({
         fulfillmentText: reply,
