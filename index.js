@@ -12,103 +12,89 @@ const BASE_URL = 'https://touristeproject.onrender.com/api/public';
 app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
+    const contexts = req.body?.queryResult?.outputContexts; // Récupérer les contextes
+
+    let reply = '';
+    let list = '';
 
     // Si l'intent est "Ask_All_Attractions"
     if (intentName === 'Ask_All_Attractions') {
       const { data: attractions } = await axios.get(`${BASE_URL}/getAll/Attraction`);
 
       if (!Array.isArray(attractions) || attractions.length === 0) {
-        return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
+        reply = "I couldn't find any attractions for you.";
+      } else {
+        list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
+        reply = `Here are the attractions:\n${list}`;
       }
 
-      // On liste toutes les attractions avec le symbole d'attraction
-      const list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
-      const reply = `Here are the attractions:\n${list}`;
-
+      // Définir le contexte "attractions_requested"
       return res.json({
         fulfillmentText: reply,
-        fulfillmentMessages: [
-          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
-        ]
-      });
-    }
-
-    // Si l'intent est "Ask_Natural_Attractions"
-    if (intentName === 'Ask_Natural_Attractions') {
-      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/NaturalAttractions`);
-
-      if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
-        return res.json({ fulfillmentText: "I couldn't find any natural attractions for you." });
-      }
-
-      // On liste toutes les attractions naturelles avec le symbole d'attraction naturelle
-      const list = naturalAttractions.map(a => `🌿 ${a.name} (${a.cityName})`).join('\n');
-      const reply = `Here are some natural attractions:\n${list}`;
-
-      return res.json({
-        fulfillmentText: reply,
-        fulfillmentMessages: [
-          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        outputContexts: [
+          {
+            name: `${req.body.session}/contexts/attractions_requested`,
+            lifespanCount: 5, // Le contexte dure pour 5 tours
+            parameters: {
+              last_attraction: 'all' // Marque que l'utilisateur a demandé les attractions générales
+            }
+          }
         ]
       });
     }
 
     // Si l'intent est "Ask_Historical_Attractions"
     if (intentName === 'Ask_Historical_Attractions') {
-      const { data: historicalAttractions } = await axios.get(`${BASE_URL}/HistoricalAttractions`);
+      const { data: historicalAttractions } = await axios.get(`${BASE_URL}/getAll/HistoricalAttraction`);
 
       if (!Array.isArray(historicalAttractions) || historicalAttractions.length === 0) {
-        return res.json({ fulfillmentText: "I couldn't find any historical attractions for you." });
+        reply = "I couldn't find any historical attractions for you.";
+      } else {
+        list = historicalAttractions.map(a => `🏛️ ${a.name} (${a.cityName})`).join('\n');
+        reply = `Here are some historical attractions:\n${list}`;
       }
 
-      // On liste toutes les attractions historiques avec le symbole d'attraction historique
-      const list = historicalAttractions.map(a => `🏛️ ${a.name} (${a.cityName})`).join('\n');
-      const reply = `Here are some historical attractions:\n${list}`;
+      // Vérifier si un contexte est défini pour une attraction précédente (All Attractions par exemple)
+      if (contexts && contexts.some(context => context.name.includes('attractions_requested') && context.parameters.last_attraction === 'all')) {
+        reply = `You previously asked for all attractions. Now I’m showing you the historical ones.\n${reply}`;
+      }
 
       return res.json({
         fulfillmentText: reply,
-        fulfillmentMessages: [
-          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        outputContexts: [
+          {
+            name: `${req.body.session}/contexts/attractions_requested`,
+            lifespanCount: 5,
+            parameters: {
+              last_attraction: 'historical' // Marque que l'utilisateur a demandé les attractions historiques
+            }
+          }
         ]
       });
     }
 
-    // Si l'intent est "Ask_Cultural_Attractions"
-    if (intentName === 'Ask_Cultural_Attractions') {
-      const { data: culturalAttractions } = await axios.get(`${BASE_URL}/CulturalAttractions`);
+    // Si l'intent est "Ask_Natural_Attractions"
+    if (intentName === 'Ask_Natural_Attractions') {
+      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/getAll/NaturalAttraction`);
 
-      if (!Array.isArray(culturalAttractions) || culturalAttractions.length === 0) {
-        return res.json({ fulfillmentText: "I couldn't find any cultural attractions for you." });
+      if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
+        reply = "I couldn't find any natural attractions for you.";
+      } else {
+        list = naturalAttractions.map(a => `🌿 ${a.name} (${a.cityName})`).join('\n');
+        reply = `Here are some natural attractions:\n${list}`;
       }
 
-      // On liste toutes les attractions culturelles avec le symbole d'attraction culturelle
-      const list = culturalAttractions.map(a => `🎭 ${a.name} (${a.cityName})`).join('\n');
-      const reply = `Here are some cultural attractions:\n${list}`;
-
+      // Mise à jour du contexte
       return res.json({
         fulfillmentText: reply,
-        fulfillmentMessages: [
-          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
-        ]
-      });
-    }
-
-    // Si l'intent est "Ask_Artificial_Attractions"
-    if (intentName === 'Ask_Artificial_Attractions') {
-      const { data: artificialAttractions } = await axios.get(`${BASE_URL}/ArtificialAttractions`);
-
-      if (!Array.isArray(artificialAttractions) || artificialAttractions.length === 0) {
-        return res.json({ fulfillmentText: "I couldn't find any artificial attractions for you." });
-      }
-
-      // On liste toutes les attractions artificielles avec le symbole d'attraction artificielle
-      const list = artificialAttractions.map(a => `🏙️ ${a.name} (${a.cityName})`).join('\n');
-      const reply = `Here are some artificial attractions:\n${list}`;
-
-      return res.json({
-        fulfillmentText: reply,
-        fulfillmentMessages: [
-          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        outputContexts: [
+          {
+            name: `${req.body.session}/contexts/attractions_requested`,
+            lifespanCount: 5,
+            parameters: {
+              last_attraction: 'natural' // Marque que l'utilisateur a demandé des attractions naturelles
+            }
+          }
         ]
       });
     }
