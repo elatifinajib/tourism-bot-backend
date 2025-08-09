@@ -137,6 +137,26 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    // Si l'intent est "Ask_Restaurants"
+    if (intentName === 'Ask_Restaurants') {
+      const { data: restaurants } = await axios.get(`${BASE_URL}/Restaurants`);
+
+      if (!Array.isArray(restaurants) || restaurants.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any restaurants for you." });
+      }
+
+      // On liste tous les restaurants avec le symbole d'attraction
+      const list = restaurants.map(r => `🍽️ ${r.name} (${r.cityName})`).join('\n');
+      const reply = `Looking for a great place to eat? Here are some top restaurants:\n${list}\nEnjoy your meal!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
     // Réponse par défaut
     return res.json({ fulfillmentText: "Sorry, I didn't understand your request. Please let me know what you're looking for!" });
 
