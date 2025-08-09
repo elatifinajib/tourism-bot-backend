@@ -22,7 +22,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       // On liste toutes les attractions avec le symbole d'attraction et le format souhaité
-      const list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
+      const list = attractions.map(a => `          🌟 ${a.name} (${a.cityName})`).join('\n');
       const reply = `Here are the attractions:\n${list}`;
 
       return res.json({
