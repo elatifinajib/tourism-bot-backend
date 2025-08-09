@@ -35,7 +35,7 @@ app.post('/webhook', async (req, res) => {
 
     // Si l'intent est "Ask_Natural_Attractions"
     if (intentName === 'Ask_Natural_Attractions') {
-      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/NaturalAttractions`);
+      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/getAll/NaturalAttraction`);
 
       if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
         return res.json({ fulfillmentText: "I couldn't find any natural attractions for you." });
@@ -44,6 +44,26 @@ app.post('/webhook', async (req, res) => {
       // On liste toutes les attractions naturelles avec le symbole d'attraction naturelle
       const list = naturalAttractions.map(a => `🌿 ${a.name} (${a.cityName})`).join('\n');
       const reply = `Here are some natural attractions:\n${list}`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } } // Compatible avec Dialogflow Messenger
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_Historical_Attractions"
+    if (intentName === 'Ask_Historical_Attractions') {
+      const { data: historicalAttractions } = await axios.get(`${BASE_URL}/HistoricalAttractions`);
+
+      if (!Array.isArray(historicalAttractions) || historicalAttractions.length === 0) {
+        return res.json({ fulfillmentText: "I couldn't find any historical attractions for you." });
+      }
+
+      // On liste toutes les attractions historiques avec le symbole d'attraction historique
+      const list = historicalAttractions.map(a => `🏛️ ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are some historical attractions:\n${list}`;
 
       return res.json({
         fulfillmentText: reply,
