@@ -35,7 +35,7 @@ app.post('/webhook', async (req, res) => {
 
     // Si l'intent est "Ask_Natural_Attractions"
     if (intentName === 'Ask_Natural_Attractions') {
-      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/getAll/NaturalAttraction`);
+      const { data: naturalAttractions } = await axios.get(`${BASE_URL}/NaturalAttraction`);
 
       if (!Array.isArray(naturalAttractions) || naturalAttractions.length === 0) {
         return res.json({ fulfillmentText: "I couldn't find any natural attractions for you." });
