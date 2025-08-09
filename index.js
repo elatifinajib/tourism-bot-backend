@@ -13,6 +13,8 @@ app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
 
+    // ----------- Gérer les Attractions -----------
+
     // Si l'intent est "Ask_All_Attractions"
     if (intentName === 'Ask_All_Attractions') {
       const { data: attractions } = await axios.get(`${BASE_URL}/getAll/Attraction`);
@@ -113,12 +115,34 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    // ----------- Gérer les Amenities -----------
+
+    // Si l'intent est "Ask_All_Amenities"
+    if (intentName === 'Ask_All_Amenities') {
+      const { data: amenities } = await axios.get(`${BASE_URL}/getAll/Amenities`);
+
+      if (!Array.isArray(amenities) || amenities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any amenities for you." });
+      }
+
+      // On liste toutes les amenities avec le nom et la ville
+      const list = amenities.map(a => `🏨 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are some amenities that can enhance your visit:\n${list}\nThese places offer great services to make your experience unforgettable!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
     // Réponse par défaut
-    return res.json({ fulfillmentText: "I'm sorry, I couldn't quite understand that. Let me know what you're looking for, and I'll help you find the best tourist spots!" });
+    return res.json({ fulfillmentText: "Sorry, I didn't understand your request. Please let me know what you're looking for!" });
 
   } catch (error) {
     console.error('Webhook error:', error?.message);
-    return res.json({ fulfillmentText: 'Oops, something went wrong while fetching attractions. Please try again later!' });
+    return res.json({ fulfillmentText: 'Oops, something went wrong while fetching information. Please try again later!' });
   }
 });
 
