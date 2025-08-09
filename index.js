@@ -21,16 +21,21 @@ app.post('/webhook', async (req, res) => {
         return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
       }
 
-      // Créer la liste d'attractions avec un retour à la ligne HTML <br>
-      const list = attractions.map(a => `- ${a.name} (${a.cityName})`).join('<br>'); // Utilisation de <br> pour les retours à la ligne HTML
-      const reply = `Here are the attractions:<br>${list}`;
-
-      return res.json({
-        fulfillmentText: reply,
-        fulfillmentMessages: [
-          { text: { text: [reply] } } // Un seul message avec toutes les attractions formatées
-        ]
+      // Création de la réponse en plusieurs messages séparés
+      const messages = attractions.map(a => {
+        return { text: { text: [`- ${a.name} (${a.cityName})`] } };
       });
+
+      // Ajouter un message introductif
+      const reply = {
+        fulfillmentText: "Here are the attractions:",
+        fulfillmentMessages: [
+          { text: { text: ["Here are the attractions:"] } },
+          ...messages, // Inclure les messages d'attractions
+        ]
+      };
+
+      return res.json(reply);
     }
 
     // Réponse par défaut
