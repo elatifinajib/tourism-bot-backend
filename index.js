@@ -21,9 +21,9 @@ app.post('/webhook', async (req, res) => {
         return res.json({ fulfillmentText: "I couldn't find any attractions for you." });
       }
 
-      // On liste toutes les attractions avec un retour à la ligne HTML <br> entre chaque
-      const list = attractions.map(a => `- ${a.name} (${a.cityName})`).join('<br>');
-      const reply = `Here are the attractions:<br>${list}`;
+      // On liste toutes les attractions avec le symbole d'attraction et le format souhaité
+      const list = attractions.map(a => `🌟 ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are the attractions:\n${list}`;
 
       return res.json({
         fulfillmentText: reply,
