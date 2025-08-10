@@ -93,15 +93,116 @@ function formatList(items, emoji) {
     .join('\n');
 }
 
-// Fonction pour créer une carte "info" avec l'image, le titre et le sous-titre
+async function fetchWithRetry(path) {
+  let lastErr;
+  for (let i = 0; i <= RETRIES; i++) {
+    try {
+      const cached = getCache(path);
+      if (cached) return cached;
+      const { data } = await api.get(path);
+      const arr = safeArray(data);
+      setCache(path, arr);
+      return arr;
+    } catch (e) {
+      lastErr = e;
+      await new Promise(r => setTimeout(r, 200 * i));
+    }
+  }
+  throw lastErr;
+}
+
+// ---------- RICH CONTENT BUILDERS (Dialogflow Messenger) ----------
+function chipsYesNo(lang) {
+  return [{
+    type: 'chips',
+    options: [
+      { text: lang === 'fr' ? 'Oui' : 'Yes' },
+      { text: lang === 'fr' ? 'Non' : 'No' },
+    ]
+  }];
+}
+
+// Chips par famille (contextuel)
+function chipsFamily(family, lang) {
+  const t = (fr, en) => (lang === 'fr' ? fr : en);
+  const opt = (label) => ({ text: label });
+
+  switch (family) {
+    case 'attractions':
+      return [{
+        type: 'chips',
+        options: [
+          opt(t('Attractions naturelles', 'Natural attractions')),
+          opt(t('Sites historiques', 'Historical attractions')),
+          opt(t('Attractions culturelles', 'Cultural attractions')),
+          opt(t('Merveilles artificielles', 'Artificial attractions')),
+        ]
+      }];
+    case 'activities':
+      return [{
+        type: 'chips',
+        options: [
+          opt(t('Activités sportives', 'Sports activities')),
+          opt(t('Activités culturelles', 'Cultural activities')),
+          opt(t('Activités traditionnelles', 'Traditional activities')),
+          opt(t('Activités d’aventure', 'Adventure activities')),
+        ]
+      }];
+    case 'amenities':
+      return [{
+        type: 'chips',
+        options: [
+          opt(t('Hôtels', 'Hotels')),
+          opt(t('Cafés', 'Cafes')),
+          opt(t('Restaurants', 'Restaurants')),
+          opt(t('Maisons d’hôtes', 'Guest houses')),
+          opt(t('Lodges', 'Lodges')),
+          opt(t('Campings', 'Campings')),
+        ]
+      }];
+    case 'transport':
+      return [{
+        type: 'chips',
+        options: [
+          opt(t('Bus', 'Bus')),
+          opt(t('Taxis', 'Taxis')),
+          opt(t('Vols', 'Flights')),
+        ]
+      }];
+    case 'services':
+      return [{
+        type: 'chips',
+        options: [
+          opt(t('Banques', 'Banks')),
+          opt(t('Guides touristiques', 'Tour guides')),
+          opt(t('Agences auto', 'Car agencies')),
+          opt(t('Sanitaires', 'Sanitary')),
+          opt(t('Administratifs', 'Administrative')),
+          opt(t('Accessibilité', 'Accessibility')),
+        ]
+      }];
+    default:
+      return [{
+        type: 'chips',
+        options: [
+          opt(t('Attractions', 'Attractions')),
+          opt(t('Activités', 'Activities')),
+          opt(t('Hôtels', 'Hotels')),
+          opt(t('Cafés', 'Cafes')),
+          opt(t('Restaurants', 'Restaurants')),
+          opt(t('Taxis', 'Taxis')),
+        ]
+      }];
+  }
+}
+
+// Construit un bloc “info card” pour un item
 function infoCard(item, emoji) {
-  const imageUrl = item?.imageUrls?.[0] || ''; // Prendre la première image (si elle existe)
   return {
     type: 'info',
     title: `${emoji} ${item?.name || ''}`.trim(),
     subtitle: item?.cityName ? String(item.cityName) : '',
-    text: item?.description || '', // Ajouter la description si disponible
-    image: imageUrl ? { src: { rawUrl: imageUrl } } : { src: { rawUrl: '' } } // Ajouter l'image si disponible
+    image: { src: { rawUrl: '' } } // champ optionnel vide (évite affichage d'image)
   };
 }
 
@@ -247,7 +348,7 @@ app.post('/webhook', async (req, res) => {
     }];
     return res.json({
       fulfillmentText: txt,
-      fulfillmentMessages: [{ text: { text: [txt] } }], 
+      fulfillmentMessages: [{ text: { text: [txt] } }],
       outputContexts
     });
   }
