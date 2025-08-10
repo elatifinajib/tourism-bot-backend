@@ -499,6 +499,87 @@ app.post('/webhook', async (req, res) => {
         ]
       });
     }
+    // ----------- Gérer les Accessibilités -----------
+
+    // Si l'intent est "Ask_All_Accessibilities"
+    if (intentName === 'Ask_All_Accessibilities') {
+      const { data: accessibilities } = await axios.get(`${BASE_URL}/getAll/Accessibility`);
+
+      if (!Array.isArray(accessibilities) || accessibilities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any accessibility services for you." });
+      }
+
+      // On liste toutes les accessibilités avec le symbole d'accessibilité
+      const list = accessibilities.map(a => `♿ ${a.name} (${a.cityName})`).join('\n');
+      const reply = `Here are some accessibility services to make your visit more comfortable:\n${list}\nLet me know if you need more details!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_Bus"
+    if (intentName === 'Ask_All_Bus') {
+      const { data: buses } = await axios.get(`${BASE_URL}/Bus`);
+
+      if (!Array.isArray(buses) || buses.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any bus services for you." });
+      }
+
+      // On liste tous les services de bus avec le symbole
+      const list = buses.map(bus => `🚌 ${bus.name} (${bus.cityName})`).join('\n');
+      const reply = `Looking for buses? Here are some bus services you can use:\n${list}\nSafe travels!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_Fly"
+    if (intentName === 'Ask_All_Fly') {
+      const { data: flights } = await axios.get(`${BASE_URL}/Fly`);
+
+      if (!Array.isArray(flights) || flights.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any flight services for you." });
+      }
+
+      // On liste tous les services de vols avec le symbole
+      const list = flights.map(flight => `✈️ ${flight.name} (${flight.cityName})`).join('\n');
+      const reply = `Need a flight? Here are some flight services to get you to your destination:\n${list}\nSafe travels!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_Taxi"
+    if (intentName === 'Ask_All_Taxi') {
+      const { data: taxis } = await axios.get(`${BASE_URL}/Taxi`);
+
+      if (!Array.isArray(taxis) || taxis.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any taxi services for you." });
+      }
+
+      // On liste tous les services de taxi avec le symbole
+      const list = taxis.map(taxi => `🚖 ${taxi.name} (${taxi.cityName})`).join('\n');
+      const reply = `Looking for a taxi? Here are some reliable taxi services:\n${list}\nHop in and enjoy your ride!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
 
     
 
