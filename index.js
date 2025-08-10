@@ -15,36 +15,36 @@ const MAX_ITEMS = 10;            // on affiche 10 éléments max
 
 // Intent → endpoint + emoji + titres FR/EN
 const INTENT_MAP = {
-  Ask_All_Attractions:       { path: '/getAll/Attraction',       emoji: '🌟', title: { fr: 'Attractions à découvrir', en: 'Top attractions' } },
-  Ask_Natural_Attractions:   { path: '/NaturalAttractions',      emoji: '🌿', title: { fr: 'Attractions naturelles',  en: 'Natural attractions' } },
-  Ask_Historical_Attractions:{ path: '/HistoricalAttractions',   emoji: '🏛️', title: { fr: 'Sites historiques',       en: 'Historical attractions' } },
-  Ask_Cultural_Attractions:  { path: '/CulturalAttractions',     emoji: '🎭', title: { fr: 'Attractions culturelles', en: 'Cultural attractions' } },
-  Ask_Artificial_Attractions:{ path: '/ArtificialAttractions',   emoji: '🏙️', title: { fr: 'Merveilles artificielles',en: 'Artificial attractions' } },
+  Ask_All_Attractions:       { path: '/getAll/Attraction',       emoji: '🌟', title: { fr: 'Attractions à découvrir',  en: 'Top attractions' } },
+  Ask_Natural_Attractions:   { path: '/NaturalAttractions',      emoji: '🌿', title: { fr: 'Attractions naturelles',   en: 'Natural attractions' } },
+  Ask_Historical_Attractions:{ path: '/HistoricalAttractions',   emoji: '🏛️', title: { fr: 'Sites historiques',        en: 'Historical attractions' } },
+  Ask_Cultural_Attractions:  { path: '/CulturalAttractions',     emoji: '🎭', title: { fr: 'Attractions culturelles',  en: 'Cultural attractions' } },
+  Ask_Artificial_Attractions:{ path: '/ArtificialAttractions',   emoji: '🏙️', title: { fr: 'Merveilles artificielles', en: 'Artificial attractions' } },
 
-  Ask_All_Amenities:         { path: '/getAll/Amenities',        emoji: '🏨', title: { fr: 'Commodités',               en: 'Amenities' } },
-  Ask_Restaurants:           { path: '/Restaurants',             emoji: '🍽️', title: { fr: 'Restaurants',             en: 'Restaurants' } },
-  Ask_Cafes:                 { path: '/Cafes',                   emoji: '☕',  title: { fr: 'Cafés',                   en: 'Cafes' } },
-  Ask_Campings:              { path: '/Camping',                 emoji: '🏕️', title: { fr: 'Campings',                en: 'Campings' } },
-  Ask_GuestHouses:           { path: '/GuestHouses',             emoji: '🏡', title: { fr: 'Maisons d’hôtes',         en: 'Guest houses' } },
-  Ask_Hotels:                { path: '/Hotels',                  emoji: '🏨', title: { fr: 'Hôtels',                  en: 'Hotels' } },
-  Ask_Lodges:                { path: '/Lodges',                  emoji: '🏞️', title: { fr: 'Lodges',                  en: 'Lodges' } },
+  Ask_All_Amenities:         { path: '/getAll/Amenities',        emoji: '🏨', title: { fr: 'Commodités',                en: 'Amenities' } },
+  Ask_Restaurants:           { path: '/Restaurants',             emoji: '🍽️', title: { fr: 'Restaurants',              en: 'Restaurants' } },
+  Ask_Cafes:                 { path: '/Cafes',                   emoji: '☕',  title: { fr: 'Cafés',                    en: 'Cafes' } },
+  Ask_Campings:              { path: '/Camping',                 emoji: '🏕️', title: { fr: 'Campings',                 en: 'Campings' } },
+  Ask_GuestHouses:           { path: '/GuestHouses',             emoji: '🏡', title: { fr: 'Maisons d’hôtes',          en: 'Guest houses' } },
+  Ask_Hotels:                { path: '/Hotels',                  emoji: '🏨', title: { fr: 'Hôtels',                   en: 'Hotels' } },
+  Ask_Lodges:                { path: '/Lodges',                  emoji: '🏞️', title: { fr: 'Lodges',                   en: 'Lodges' } },
 
-  Ask_All_Activities:        { path: '/getAll/Activities',       emoji: '🎉', title: { fr: 'Activités',               en: 'Activities' } },
-  Ask_Traditional_Activities:{ path: '/Activity/Traditional',    emoji: '🎉', title: { fr: 'Activités traditionnelles',en: 'Traditional activities' } },
-  Ask_Sports_Activities:     { path: '/Activity/Sports',         emoji: '🏃‍♂️', title:{ fr: 'Activités sportives',    en: 'Sports activities' } },
-  Ask_Adventural_Activities: { path: '/Activity/Adventure',      emoji: '🏞️', title: { fr: 'Activités d’aventure',    en: 'Adventure activities' } },
+  Ask_All_Activities:        { path: '/getAll/Activities',       emoji: '🎉', title: { fr: 'Activités',                en: 'Activities' } },
+  Ask_Traditional_Activities:{ path: '/Activity/Traditional',    emoji: '🎉', title: { fr: 'Activités traditionnelles', en: 'Traditional activities' } },
+  Ask_Sports_Activities:     { path: '/Activity/Sports',         emoji: '🏃‍♂️', title:{ fr: 'Activités sportives',     en: 'Sports activities' } },
+  Ask_Adventural_Activities: { path: '/Activity/Adventure',      emoji: '🏞️', title: { fr: 'Activités d’aventure',     en: 'Adventure activities' } },
 
-  Ask_All_AncillaryServices: { path: '/getAll/AncillaryService', emoji: '🛠️', title: { fr: 'Services annexes',        en: 'Ancillary services' } },
-  Ask_All_TourGuide:         { path: '/Service/TourGuide',       emoji: '👨‍🏫', title:{ fr: 'Guides touristiques',     en: 'Tour guides' } },
-  Ask_All_Sanitary:          { path: '/Service/Sanitary',        emoji: '💧', title: { fr: 'Services sanitaires',      en: 'Sanitary services' } },
-  Ask_All_CarAgency:         { path: '/Service/CarAgency',       emoji: '🚗', title: { fr: 'Agences de location',      en: 'Car rental agencies' } },
-  Ask_All_Administratives:   { path: '/Service/Administrative',  emoji: '📑', title: { fr: 'Services administratifs',  en: 'Administrative services' } },
-  Ask_All_Banks:             { path: '/Service/Bank',            emoji: '🏦', title: { fr: 'Banques',                  en: 'Banks' } },
+  Ask_All_AncillaryServices: { path: '/getAll/AncillaryService', emoji: '🛠️', title: { fr: 'Services annexes',         en: 'Ancillary services' } },
+  Ask_All_TourGuide:         { path: '/Service/TourGuide',       emoji: '👨‍🏫', title:{ fr: 'Guides touristiques',      en: 'Tour guides' } },
+  Ask_All_Sanitary:          { path: '/Service/Sanitary',        emoji: '💧', title: { fr: 'Services sanitaires',       en: 'Sanitary services' } },
+  Ask_All_CarAgency:         { path: '/Service/CarAgency',       emoji: '🚗', title: { fr: 'Agences de location',       en: 'Car rental agencies' } },
+  Ask_All_Administratives:   { path: '/Service/Administrative',  emoji: '📑', title: { fr: 'Services administratifs',   en: 'Administrative services' } },
+  Ask_All_Banks:             { path: '/Service/Bank',            emoji: '🏦', title: { fr: 'Banques',                   en: 'Banks' } },
 
-  Ask_All_Accessibilities:   { path: '/getAll/Accessibility',    emoji: '♿', title: { fr: 'Accessibilité',            en: 'Accessibility services' } },
-  Ask_All_Bus:               { path: '/Bus',                     emoji: '🚌', title: { fr: 'Services de bus',          en: 'Bus services' } },
-  Ask_All_Fly:               { path: '/Fly',                     emoji: '✈️', title: { fr: 'Vols',                     en: 'Flight services' } },
-  Ask_All_Taxi:              { path: '/Taxi',                    emoji: '🚖', title: { fr: 'Taxis',                    en: 'Taxi services' } },
+  Ask_All_Accessibilities:   { path: '/getAll/Accessibility',    emoji: '♿', title: { fr: 'Accessibilité',             en: 'Accessibility services' } },
+  Ask_All_Bus:               { path: '/Bus',                     emoji: '🚌', title: { fr: 'Services de bus',           en: 'Bus services' } },
+  Ask_All_Fly:               { path: '/Fly',                     emoji: '✈️', title: { fr: 'Vols',                      en: 'Flight services' } },
+  Ask_All_Taxi:              { path: '/Taxi',                    emoji: '🚖', title: { fr: 'Taxis',                     en: 'Taxi services' } },
 };
 
 // ---- HTTP client axios ----
@@ -64,17 +64,12 @@ function getCache(key) {
 
 // ---- utilitaires ----
 function langFrom(req) {
-  // Dialogflow ES: queryResult.languageCode (ex: "fr", "en")
   const lc = req.body?.queryResult?.languageCode || '';
   return (lc || '').toLowerCase().startsWith('fr') ? 'fr' : 'en';
 }
-
-function safeArray(x) {
-  return Array.isArray(x) ? x : [];
-}
+function safeArray(x) { return Array.isArray(x) ? x : []; }
 
 function formatList(items, emoji) {
-  // map name + cityName, ignore sans name
   return items
     .filter(it => it && it.name)
     .map(it => `${emoji} ${it.name}${it.cityName ? ` (${it.cityName})` : ''}`)
@@ -82,7 +77,6 @@ function formatList(items, emoji) {
 }
 
 async function fetchWithRetry(path) {
-  // 1 tentative + RETRIES
   let lastErr;
   for (let i = 0; i <= RETRIES; i++) {
     try {
@@ -95,15 +89,13 @@ async function fetchWithRetry(path) {
       return arr;
     } catch (e) {
       lastErr = e;
-      // petit backoff linéaire (200ms*i)
-      await new Promise(r => setTimeout(r, 200 * i));
+      await new Promise(r => setTimeout(r, 200 * i)); // mini backoff
     }
   }
   throw lastErr;
 }
 
 function buildReply({ intentCfg, lang, fullList }) {
-  // tri: cityName puis name pour une lecture cohérente
   const list = [...fullList].sort((a, b) => {
     const ac = (a.cityName || '').localeCompare(b.cityName || '');
     if (ac !== 0) return ac;
@@ -124,7 +116,6 @@ function buildReply({ intentCfg, lang, fullList }) {
     ? (more > 0 ? `\n…et encore ${more} autre${more>1?'s':''}.` : '')
     : (more > 0 ? `\n…and ${more} more.` : '');
 
-  // petit CTA générique (sans nouveaux intents/entités)
   const cta = lang === 'fr'
     ? `\n\nTu veux un autre type (ex: hôtels, cafés) ? Dis-le moi 🙂`
     : `\n\nWant another type (e.g., hotels, cafes)? Just say it 🙂`;
@@ -132,12 +123,79 @@ function buildReply({ intentCfg, lang, fullList }) {
   return `${header}\n${body}${tail}${cta}`;
 }
 
-// ---- Webhook ----
+// Petit “menu de types” quand l’utilisateur dit OUI
+function buildTypeMenu(lang) {
+  if (lang === 'fr') {
+    return [
+      "D’accord ! Dis-moi ce que tu veux voir :",
+      "• 🏨 Hôtels",
+      "• ☕ Cafés",
+      "• 🍽️ Restaurants",
+      "• 🌟 Attractions (toutes)",
+      "• 🎉 Activités",
+      "• 🚌 Bus   • 🚖 Taxis   • ✈️ Vols   • 🏦 Banques",
+      "Par exemple : « montre-moi les hôtels » ou « cafés »."
+    ].join('\n');
+  }
+  return [
+    "Alright! Tell me what you'd like to see:",
+    "• 🏨 Hotels",
+    "• ☕ Cafes",
+    "• 🍽️ Restaurants",
+    "• 🌟 Attractions (all)",
+    "• 🎉 Activities",
+    "• 🚌 Bus   • 🚖 Taxis   • ✈️ Flights   • 🏦 Banks",
+    "For example: “show me hotels” or “cafes”."
+  ].join('\n');
+}
+
+// Helpers contexts (optionnels mais utiles pour le flux Oui/Non)
+function ctxName(session, short) { return `${session}/contexts/${short}`; }
+function getCtx(req, short) {
+  const list = req.body?.queryResult?.outputContexts || [];
+  return list.find(c => c.name && c.name.endsWith(`/${short}`));
+}
+
 app.post('/webhook', async (req, res) => {
   const intentName = req.body?.queryResult?.intent?.displayName;
   const lang = langFrom(req);
+  const session = req.body?.session || '';
   const cfg = INTENT_MAP[intentName];
 
+  // --- Gestion Oui/Non (intents nouvellement ajoutés dans Dialogflow) ---
+  if (intentName === 'Yes_Generic') {
+    // si on a un contexte d’attente (créé après une liste), on propose le menu
+    const awaiting = getCtx(req, 'awaiting_type_ctx');
+    const text = buildTypeMenu(lang);
+    const outputContexts = [{
+      name: ctxName(session, 'awaiting_type_ctx'),
+      lifespanCount: 3,
+      parameters: { asked: true }
+    }];
+    return res.json({
+      fulfillmentText: text,
+      fulfillmentMessages: [{ text: { text: [text] } }],
+      outputContexts
+    });
+  }
+
+  if (intentName === 'No_Generic') {
+    const text = (lang === 'fr')
+      ? "Très bien 🙂. Si tu veux autre chose plus tard, je suis là !"
+      : "Alright 🙂. If you need anything later, I’m here!";
+    // on “nettoie” le contexte d’attente
+    const outputContexts = [{
+      name: ctxName(session, 'awaiting_type_ctx'),
+      lifespanCount: 0
+    }];
+    return res.json({
+      fulfillmentText: text,
+      fulfillmentMessages: [{ text: { text: [text] } }],
+      outputContexts
+    });
+  }
+
+  // --- Flux principal DRY pour toutes les listes ---
   if (!cfg) {
     const text = lang === 'fr'
       ? "Désolé, je n’ai pas compris ta demande. Que souhaites-tu trouver ?"
@@ -157,13 +215,20 @@ app.post('/webhook', async (req, res) => {
 
     const reply = buildReply({ intentCfg: cfg, lang, fullList: list });
 
+    // on met un petit contexte “awaiting_type_ctx” pour que “oui / non” marche juste après
+    const outputContexts = [{
+      name: ctxName(session, 'awaiting_type_ctx'),
+      lifespanCount: 3,
+      parameters: { lastIntent: intentName }
+    }];
+
     return res.json({
       fulfillmentText: reply,
-      fulfillmentMessages: [{ text: { text: [reply] } }]
+      fulfillmentMessages: [{ text: { text: [reply] } }],
+      outputContexts
     });
 
   } catch (error) {
-    // logs utiles pour le debug
     console.error('Webhook error:', {
       message: error?.message,
       intent: intentName,
