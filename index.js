@@ -378,6 +378,128 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    // ----------- Gérer les Ancillary Services -----------
+
+    // Si l'intent est "Ask_All_AncillaryServices"
+    if (intentName === 'Ask_All_AncillaryServices') {
+      const { data: ancillaryServices } = await axios.get(`${BASE_URL}/getAll/AncillaryService`);
+
+      if (!Array.isArray(ancillaryServices) || ancillaryServices.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any ancillary services for you." });
+      }
+
+      // On liste tous les services auxiliaires avec le symbole d'attraction
+      const list = ancillaryServices.map(service => `🛠️ ${service.name} (${service.cityName})`).join('\n');
+      const reply = `Here are some additional services that can enhance your experience:\n${list}\nThese services will make your trip even better!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_TourGuide"
+    if (intentName === 'Ask_All_TourGuide') {
+      const { data: tourGuides } = await axios.get(`${BASE_URL}/Service/TourGuide`);
+
+      if (!Array.isArray(tourGuides) || tourGuides.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any tour guides for you." });
+      }
+
+      // On liste tous les guides touristiques avec le symbole
+      const list = tourGuides.map(guide => `👨‍🏫 ${guide.name} (${guide.cityName})`).join('\n');
+      const reply = `Looking for a local guide? Here are some experienced tour guides:\n${list}\nThey'll make your visit even more special!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_Sanitary"
+    if (intentName === 'Ask_All_Sanitary') {
+      const { data: sanitaryServices } = await axios.get(`${BASE_URL}/Service/Sanitary`);
+
+      if (!Array.isArray(sanitaryServices) || sanitaryServices.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any sanitary services for you." });
+      }
+
+      // On liste tous les services sanitaires avec le symbole
+      const list = sanitaryServices.map(service => `💧 ${service.name} (${service.cityName})`).join('\n');
+      const reply = `Here are some sanitary services available for you:\n${list}\nStay healthy during your trip!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_CarAgency"
+    if (intentName === 'Ask_All_CarAgency') {
+      const { data: carAgencies } = await axios.get(`${BASE_URL}/Service/CarAgency`);
+
+      if (!Array.isArray(carAgencies) || carAgencies.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any car agencies for you." });
+      }
+
+      // On liste toutes les agences de location de voitures avec le symbole
+      const list = carAgencies.map(agency => `🚗 ${agency.name} (${agency.cityName})`).join('\n');
+      const reply = `Here are some car rental agencies to help you get around:\n${list}\nDrive safely!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_Administratives"
+    if (intentName === 'Ask_All_Administratives') {
+      const { data: administrativeServices } = await axios.get(`${BASE_URL}/Service/Administrative`);
+
+      if (!Array.isArray(administrativeServices) || administrativeServices.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any administrative services for you." });
+      }
+
+      // On liste tous les services administratifs avec le symbole
+      const list = administrativeServices.map(service => `📑 ${service.name} (${service.cityName})`).join('\n');
+      const reply = `Here are some administrative services you may need:\n${list}\nGet all the help you need!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // Si l'intent est "Ask_All_Banks"
+    if (intentName === 'Ask_All_Banks') {
+      const { data: banks } = await axios.get(`${BASE_URL}/Service/Bank`);
+
+      if (!Array.isArray(banks) || banks.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any banks for you." });
+      }
+
+      // On liste toutes les banques avec le symbole
+      const list = banks.map(bank => `🏦 ${bank.name} (${bank.cityName})`).join('\n');
+      const reply = `Here are some banks where you can manage your finances:\n${list}\nFeel free to visit one!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
     
 
     // Réponse par défaut
