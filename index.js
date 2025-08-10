@@ -51,6 +51,9 @@ const INTENT_MAP = {
   Ask_All_Bus:                { path: '/Bus',                     emoji: '🚌', title: { fr: 'Services de bus',           en: 'Bus services' } },
   Ask_All_Fly:                { path: '/Fly',                     emoji: '✈️', title: { fr: 'Vols',                      en: 'Flight services' } },
   Ask_All_Taxi:               { path: '/Taxi',                    emoji: '🚖', title: { fr: 'Taxis',                     en: 'Taxi services' } },
+
+  // Available Packages
+  Ask_All_AvailablePackages:  { path: '/getAll/available_Package', emoji: '🎁', title: { fr: 'Forfaits disponibles',      en: 'Available packages' } },
 };
 
 // ---- Familles pour menu contextuel ----
@@ -61,6 +64,7 @@ function getFamily(intent) {
   if (['Ask_Hotels','Ask_Cafes','Ask_Restaurants','Ask_Lodges','Ask_GuestHouses','Ask_Campings','Ask_All_Amenities'].includes(intent)) return 'amenities';
   if (['Ask_All_Bus','Ask_All_Taxi','Ask_All_Fly'].includes(intent)) return 'transport';
   if (['Ask_All_AncillaryServices','Ask_All_TourGuide','Ask_All_Sanitary','Ask_All_CarAgency','Ask_All_Administratives','Ask_All_Banks','Ask_All_Accessibilities'].includes(intent)) return 'services';
+  if (intent.includes('AvailablePackages')) return 'packages';
   return 'generic';
 }
 
@@ -89,7 +93,7 @@ function getCtx(req, short) {
 function formatList(items, emoji) {
   return items
     .filter(it => it && it.name)
-    .map(it => `${emoji} ${it.name}${it.cityName ? ` (${it.cityName})` : ''}`)
+    .map(it => `${emoji} ${it.name}${it.cityName ? ` (${it.cityName})` : ''}`) 
     .join('\n');
 }
 
@@ -112,123 +116,36 @@ async function fetchWithRetry(path) {
 }
 
 // ---------- RICH CONTENT BUILDERS (Dialogflow Messenger) ----------
-function chipsYesNo(lang) {
-  return [{
-    type: 'chips',
-    options: [
-      { text: lang === 'fr' ? 'Oui' : 'Yes' },
-      { text: lang === 'fr' ? 'Non' : 'No' },
-    ]
-  }];
-}
-
-// Chips par famille (contextuel)
-function chipsFamily(family, lang) {
-  const t = (fr, en) => (lang === 'fr' ? fr : en);
-  const opt = (label) => ({ text: label });
-
-  switch (family) {
-    case 'attractions':
-      return [{
-        type: 'chips',
-        options: [
-          opt(t('Attractions naturelles', 'Natural attractions')),
-          opt(t('Sites historiques', 'Historical attractions')),
-          opt(t('Attractions culturelles', 'Cultural attractions')),
-          opt(t('Merveilles artificielles', 'Artificial attractions')),
-        ]
-      }];
-    case 'activities':
-      return [{
-        type: 'chips',
-        options: [
-          opt(t('Activités sportives', 'Sports activities')),
-          opt(t('Activités culturelles', 'Cultural activities')),
-          opt(t('Activités traditionnelles', 'Traditional activities')),
-          opt(t('Activités d’aventure', 'Adventure activities')),
-        ]
-      }];
-    case 'amenities':
-      return [{
-        type: 'chips',
-        options: [
-          opt(t('Hôtels', 'Hotels')),
-          opt(t('Cafés', 'Cafes')),
-          opt(t('Restaurants', 'Restaurants')),
-          opt(t('Maisons d’hôtes', 'Guest houses')),
-          opt(t('Lodges', 'Lodges')),
-          opt(t('Campings', 'Campings')),
-        ]
-      }];
-    case 'transport':
-      return [{
-        type: 'chips',
-        options: [
-          opt(t('Bus', 'Bus')),
-          opt(t('Taxis', 'Taxis')),
-          opt(t('Vols', 'Flights')),
-        ]
-      }];
-    case 'services':
-      return [{
-        type: 'chips',
-        options: [
-          opt(t('Banques', 'Banks')),
-          opt(t('Guides touristiques', 'Tour guides')),
-          opt(t('Agences auto', 'Car agencies')),
-          opt(t('Sanitaires', 'Sanitary')),
-          opt(t('Administratifs', 'Administrative')),
-          opt(t('Accessibilité', 'Accessibility')),
-        ]
-      }];
-    default:
-      return [{
-        type: 'chips',
-        options: [
-          opt(t('Attractions', 'Attractions')),
-          opt(t('Activités', 'Activities')),
-          opt(t('Hôtels', 'Hotels')),
-          opt(t('Cafés', 'Cafes')),
-          opt(t('Restaurants', 'Restaurants')),
-          opt(t('Taxis', 'Taxis')),
-        ]
-      }];
-  }
-}
-
-// Construit un bloc “info card” pour un item
 function infoCard(item, emoji) {
+  const imageUrl = item?.imageUrls?.[0] || '';
   return {
     type: 'info',
     title: `${emoji} ${item?.name || ''}`.trim(),
     subtitle: item?.cityName ? String(item.cityName) : '',
-    image: { src: { rawUrl: '' } } // champ optionnel vide (évite affichage d'image)
+    text: item?.description || '', 
+    image: imageUrl ? { src: { rawUrl: imageUrl } } : { src: { rawUrl: '' } } 
   };
 }
 
-// Construit fulfillmentMessages avec richContent (listes + chips)
 function buildRichList({ headerText, items, emoji, lang, hasMore, family }) {
-  // Section 1: header (une "info" concise)
   const header = {
     type: 'info',
     title: headerText,
     subtitle: ''
   };
 
-  // Section 2: cartes items
   const cards = items.map(it => infoCard(it, emoji));
 
-  // Section 3: chips selon contexte
   const chips = hasMore ? chipsYesNo(lang) : chipsFamily(family, lang);
 
   return [
-    { text: { text: [headerText] } }, // fallback texte (utile dans l’historique)
+    { text: { text: [headerText] } },
     {
       payload: {
         richContent: [
           [header],
-          ...cards.map(c => [c]),      // chaque carte sur sa ligne
-          chips                        // chips en dernier
+          ...cards.map(c => [c]),      
+          chips
         ]
       }
     }
@@ -243,6 +160,7 @@ function buildAltMenuText(family, lang) {
       case 'amenities':   return "Choisis un autre lieu utile 👇";
       case 'transport':   return "Choisis un autre transport 👇";
       case 'services':    return "Choisis un autre service 👇";
+      case 'packages':    return "Choisis un autre forfait 👇";
       default:            return "Dis-moi ce que tu veux voir 👇";
     }
   } else {
@@ -252,6 +170,7 @@ function buildAltMenuText(family, lang) {
       case 'amenities':   return "Pick another place to visit 👇";
       case 'transport':   return "Pick another transport 👇";
       case 'services':    return "Pick another service 👇";
+      case 'packages':    return "Pick another package 👇";
       default:            return "Tell me what you'd like to see 👇";
     }
   }
@@ -321,7 +240,6 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // sinon → chips contextuels
     const fam = getFamily(lastIntent);
     const txt = buildAltMenuText(fam, lang);
     const payload = { richContent: [ [{ type: 'info', title: txt }], ...chipsFamily(fam, lang) ] };
