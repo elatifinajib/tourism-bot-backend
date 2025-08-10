@@ -267,6 +267,117 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+
+    // ----------- Gérer les Activities -----------
+
+    // Si l'intent est "Ask_All_Activities"
+    if (intentName === 'Ask_All_Activities') {
+      const { data: activities } = await axios.get(`${BASE_URL}/getAll/Activities`);
+
+      if (!Array.isArray(activities) || activities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any activities for you." });
+      }
+
+      // On liste toutes les activités avec le symbole
+      const list = activities.map(a => `🎉 ${a.name} `).join('\n');
+      const reply = `Looking for fun things to do? Here are some exciting activities to try:\n${list}\nHave a great time!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+     // ----------- Gérer les Activités Traditionnelles -----------
+
+    // Si l'intent est "Ask_Traditional_Activities"
+    if (intentName === 'Ask_Traditional_Activities') {
+      const { data: traditionalActivities } = await axios.get(`${BASE_URL}/Activity/Traditional`);
+
+      if (!Array.isArray(traditionalActivities) || traditionalActivities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any traditional activities for you." });
+      }
+
+      // On liste toutes les activités traditionnelles avec le symbole
+      const list = traditionalActivities.map(a => `🎉 ${a.name} `).join('\n');
+      const reply = `Want to experience some local traditions? Check out these amazing traditional activities:\n${list}\nEnjoy the experience!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Activités Sportives -----------
+
+    // Si l'intent est "Ask_Sports_Activities"
+    if (intentName === 'Ask_Sports_Activities') {
+      const { data: sportsActivities } = await axios.get(`${BASE_URL}/Activity/Sports`);
+
+      if (!Array.isArray(sportsActivities) || sportsActivities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any sports activities for you." });
+      }
+
+      // On liste toutes les activités sportives avec le symbole
+      const list = sportsActivities.map(a => `🏃‍♂️ ${a.name} `).join('\n');
+      const reply = `Looking for some action? Here are the best sports activities to enjoy:\n${list}\nGet ready to move!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Activités Culturelles -----------
+
+    // Si l'intent est "Ask_Cultural_Activities"
+    if (intentName === 'Ask_Cultural_Activities') {
+      const { data: culturalActivities } = await axios.get(`${BASE_URL}/Activity/Cultural`);
+
+      if (!Array.isArray(culturalActivities) || culturalActivities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any cultural activities for you." });
+      }
+
+      // On liste toutes les activités culturelles avec le symbole
+      const list = culturalActivities.map(a => `🎭 ${a.name} `).join('\n');
+      const reply = `Immerse yourself in culture! Here are some wonderful cultural activities:\n${list}\nEnjoy the rich heritage!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Activités d'Aventure -----------
+
+    // Si l'intent est "Ask_Adventure_Activities"
+    if (intentName === 'Ask_Adventural_Activities') {
+      const { data: adventureActivities } = await axios.get(`${BASE_URL}/Activity/Adventure`);
+
+      if (!Array.isArray(adventureActivities) || adventureActivities.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any adventure activities for you." });
+      }
+
+      // On liste toutes les activités d'aventure avec le symbole
+      const list = adventureActivities.map(a => `🏞️ ${a.name} `).join('\n');
+      const reply = `Are you ready for some adventure? Here are some thrilling activities:\n${list}\nTime for an adventure!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
     
 
     // Réponse par défaut
