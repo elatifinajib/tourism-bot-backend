@@ -157,6 +157,118 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    // ----------- Gérer les Cafés -----------
+
+    // Si l'intent est "Ask_Cafes"
+    if (intentName === 'Ask_Cafes') {
+      const { data: cafes } = await axios.get(`${BASE_URL}/Cafes`);
+
+      if (!Array.isArray(cafes) || cafes.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any cafes for you." });
+      }
+
+      // On liste tous les cafés avec le symbole
+      const list = cafes.map(c => `☕ ${c.name} (${c.cityName})`).join('\n');
+      const reply = `Looking for a cozy place to relax? Here are some popular cafes:\n${list}\nEnjoy your coffee!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Campings -----------
+
+    // Si l'intent est "Ask_Campings"
+    if (intentName === 'Ask_Campings') {
+      const { data: campings } = await axios.get(`${BASE_URL}/Camping`);
+
+      if (!Array.isArray(campings) || campings.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any campgrounds for you." });
+      }
+
+      // On liste tous les campings avec le symbole
+      const list = campings.map(c => `🏕️ ${c.name} (${c.cityName})`).join('\n');
+      const reply = `Ready to explore the great outdoors? Here are some beautiful camping spots:\n${list}\nHappy camping!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Guest Houses -----------
+
+    // Si l'intent est "Ask_GuestHouses"
+    if (intentName === 'Ask_GuestHouses') {
+      const { data: guestHouses } = await axios.get(`${BASE_URL}/GuestHouses`);
+
+      if (!Array.isArray(guestHouses) || guestHouses.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any guest houses for you." });
+      }
+
+      // On liste toutes les guest houses avec le symbole
+      const list = guestHouses.map(g => `🏡 ${g.name} (${g.cityName})`).join('\n');
+      const reply = `Looking for a homey stay? Here are some lovely guest houses:\n${list}\nEnjoy your stay!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Hotels -----------
+
+    // Si l'intent est "Ask_Hotels"
+    if (intentName === 'Ask_Hotels') {
+      const { data: hotels } = await axios.get(`${BASE_URL}/Hotels`);
+
+      if (!Array.isArray(hotels) || hotels.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any hotels for you." });
+      }
+
+      // On liste tous les hôtels avec le symbole
+      const list = hotels.map(h => `🏨 ${h.name} (${h.cityName})`).join('\n');
+      const reply = `Here are some of the best hotels for your stay:\n${list}\nEnjoy your luxurious stay!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    // ----------- Gérer les Lodges -----------
+
+    // Si l'intent est "Ask_Lodges"
+    if (intentName === 'Ask_Lodges') {
+      const { data: lodges } = await axios.get(`${BASE_URL}/Lodges`);
+
+      if (!Array.isArray(lodges) || lodges.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any lodges for you." });
+      }
+
+      // On liste tous les lodges avec le symbole
+      const list = lodges.map(l => `🏞️ ${l.name} (${l.cityName})`).join('\n');
+      const reply = `Escape into nature and stay at these amazing lodges:\n${list}\nEnjoy your stay in nature!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+    
+
     // Réponse par défaut
     return res.json({ fulfillmentText: "Sorry, I didn't understand your request. Please let me know what you're looking for!" });
 
