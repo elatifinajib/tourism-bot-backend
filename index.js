@@ -581,6 +581,30 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+
+    // ----------- Gérer les Available Packages -----------
+
+    // Si l'intent est "Ask_All_AvailablePackages"
+    if (intentName === 'Ask_All_AvailablePackages') {
+      const { data: availablePackages } = await axios.get(`${BASE_URL}/getAll/available_Package`);
+
+      if (!Array.isArray(availablePackages) || availablePackages.length === 0) {
+        return res.json({ fulfillmentText: "Sorry, I couldn't find any available packages for you." });
+      }
+
+      // On liste tous les packages disponibles avec un symbole
+      const list = availablePackages.map(package => `🎁 ${package.name} (${package.cityName})`).join('\n');
+      const reply = `Here are some amazing available packages for you to explore:\n${list}\nThese packages will make your trip unforgettable!`;
+
+      return res.json({
+        fulfillmentText: reply,
+        fulfillmentMessages: [
+          { text: { text: [reply] } }
+        ]
+      });
+    }
+
+
     
 
     // Réponse par défaut
