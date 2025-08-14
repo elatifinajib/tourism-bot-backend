@@ -1,19 +1,111 @@
 // server.js
+// Backend Dialogflow durci : sécurité, résilience, cache, i18n, pagination, validations.
+
+/* =========================
+ * Dépendances
+ * ========================= */
 const express = require('express');
-const bodyParser = require('body-parser');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
+const axiosRetry = require('axios-retry').default;
+const { exponentialDelay, isNetworkError, isRetryableError } = require('axios-retry');
 
+const morgan = require('morgan');
+
+/* =========================
+ * Config runtime
+ * ========================= */
+const PORT = process.env.PORT || 3000;
+// Base API amont (mettez-la en env pour pouvoir switch facilement)
+const BASE_URL =
+  process.env.PUBLIC_API_BASE_URL ||
+  'https://touristeproject.onrender.com/api/public';
+
+// Limites par défaut (peuvent être surchargées via Dialogflow parameters.limit)
+const DEFAULT_MAX_ITEMS = Number(process.env.DEFAULT_MAX_ITEMS || 10);
+
+// Caching (LRU maison ultra simple)
+const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 30_000); // 30s
+const cacheStore = new Map(); // key: url, value: { data, expires }
+
+/* =========================
+ * App & middlewares
+ * ========================= */
 const app = express();
-app.use(bodyParser.json());
+app.set('trust proxy', 1);
+app.use(helmet());
+app.use(express.json({ limit: '1mb' }));
 
-// ---- Config API ----
-const BASE_URL = 'https://touristeproject.onrender.com/api/public';
+// Logs HTTP structurés
+app.use(
+  morgan((tokens, req, res) =>
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      method: tokens.method(req, res),
+      url: tokens.url(req, res),
+      status: Number(tokens.status(req, res)),
+      length: tokens.res(req, res, 'content-length'),
+      response_ms: Number(tokens['response-time'](req, res)),
+      intent: req.body?.queryResult?.intent?.displayName || null,
+    })
+  )
+);
+
+// Rate limiting global simple
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    max: 120, // 120 req / min / IP
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
+
+/* =========================
+ * Client API résilient
+ * ========================= */
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 10_000,
+});
+axiosRetry(api, {
+  retries: 3,
+  retryDelay: exponentialDelay,
+  retryCondition: (err) =>
+    isNetworkError(err) ||
+    isRetryableError(err) ||
+    (err.response && err.response.status >= 500),
 });
 
-// ---- Configuration des intents (textes identiques à l’original + OUTROS pour attractions) ----
+
+/* =========================
+ * i18n minimal (en / fr)
+ * ========================= */
+const M = {
+  fr: {
+    unknown: "Désolé, je n'ai pas compris votre demande.",
+    empty: "Désolé, je n'ai rien trouvé pour l'instant.",
+    more: (n) => `\n…et ${n} autre(s).`,
+    error: "Oups, un problème est survenu. Réessayez plus tard !",
+  },
+  en: {
+    unknown: "Sorry, I didn't understand your request.",
+    empty: "Sorry, I couldn't find anything for now.",
+    more: (n) => `\n…and ${n} more.`,
+    error: "Oops, something went wrong. Please try again later!",
+  },
+};
+function t(langCode) {
+  return langCode?.startsWith('fr') ? M.fr : M.en;
+}
+
+/* =========================
+ * Intent config
+ * =========================
+ * NB: Textes d’intro/outro ici en EN pour garder votre original,
+ * l’i18n des messages génériques (unknown/empty/error) est gérée par M ci-dessus.
+ */
 const intentConfig = {
   // ----------- Attractions -----------
   Ask_All_Attractions: {
@@ -26,22 +118,25 @@ const intentConfig = {
   Ask_Natural_Attractions: {
     url: '/NaturalAttractions',
     icon: '🌿',
-    intro: "If you love nature, you're in for a treat! Check out these amazing natural attractions:",
-    outro: "Breathe in, slow down, and enjoy the views!",
+    intro:
+      "If you love nature, you're in for a treat! Check out these amazing natural attractions:",
+    outro: 'Breathe in, slow down, and enjoy the views!',
     empty: "I couldn't find any natural wonders for you.",
   },
   Ask_Historical_Attractions: {
     url: '/HistoricalAttractions',
     icon: '🏛️',
-    intro: 'Step back in time and explore some incredible historical sites! Here are some top recommendations:',
+    intro:
+      'Step back in time and explore some incredible historical sites! Here are some top recommendations:',
     outro: "Let history come alive—take your time to soak it all in!",
     empty: "I couldn't find any historical attractions for you.",
   },
   Ask_Cultural_Attractions: {
     url: '/CulturalAttractions',
     icon: '🎭',
-    intro: "Get ready to immerse yourself in rich culture! Here are some of the best cultural attractions:",
-    outro: "Celebrate the local spirit and connect with the community!",
+    intro:
+      "Get ready to immerse yourself in rich culture! Here are some of the best cultural attractions:",
+    outro: 'Celebrate the local spirit and connect with the community!',
     empty: "I couldn't find any cultural attractions for you.",
   },
   Ask_Artificial_Attractions: {
@@ -115,7 +210,8 @@ const intentConfig = {
   Ask_Traditional_Activities: {
     url: '/Activity/Traditional',
     icon: '🎉',
-    intro: 'Want to experience some local traditions? Check out these amazing traditional activities:',
+    intro:
+      'Want to experience some local traditions? Check out these amazing traditional activities:',
     outro: 'Enjoy the experience!',
     empty: "Sorry, I couldn't find any traditional activities for you.",
     formatter: (icon, i) => `${icon} ${i.name}`,
@@ -136,7 +232,7 @@ const intentConfig = {
     empty: "Sorry, I couldn't find any cultural activities for you.",
     formatter: (icon, i) => `${icon} ${i.name}`,
   },
-  // nom d'intent conservé tel quel (typo d'origine)
+  // nom original conservé
   Ask_Adventural_Activities: {
     url: '/Activity/Adventure',
     icon: '🏞️',
@@ -232,62 +328,148 @@ const intentConfig = {
   },
 };
 
-// ---- Helpers ----
+/* =========================
+ * Helpers
+ * ========================= */
+function safeItem(i) {
+  const name =
+    typeof i?.name === 'string' && i.name.trim() ? i.name.trim() : 'Unnamed';
+  const city =
+    typeof i?.cityName === 'string' && i.cityName.trim()
+      ? ` (${i.cityName.trim()})`
+      : '';
+  return { name, city };
+}
+
 function defaultFormatter(icon, item) {
-  const city = item.cityName ? ` (${item.cityName})` : '';
-  return `${icon} ${item.name}${city}`;
+  return `${icon} ${item.name}${item.city || ''}`;
 }
 
-function buildReply({ intro, icon, items, formatter, outro }) {
-  const fmt = formatter || defaultFormatter;
-  const list = items.map((i) => fmt(icon, i)).join('\n');
-  return outro ? `${intro}\n${list}\n${outro}` : `${intro}\n${list}`;
+function buildReply({ intro, icon, items, formatter, outro, maxItems, moreText }) {
+  const fmt = typeof formatter === 'function' ? formatter : defaultFormatter;
+  const list = items.slice(0, maxItems).map((raw) => fmt(icon, safeItem(raw))).join('\n');
+  const more =
+    items.length > maxItems ? moreText(items.length - maxItems) : '';
+  return outro ? `${intro}\n${list}${more}\n${outro}` : `${intro}\n${list}${more}`;
 }
 
-// ---- Fonction générique ----
-async function handleIntent(intentName) {
+// Cache GET simple
+async function cachedGet(url) {
+  const now = Date.now();
+  const cached = cacheStore.get(url);
+  if (cached && cached.expires > now) return cached.data;
+  const { data } = await api.get(url);
+  cacheStore.set(url, { data, expires: now + CACHE_TTL_MS });
+  return data;
+}
+
+// Lecture de paramètres utiles depuis Dialogflow
+function readDialogflowParams(req) {
+  const parameters = req.body?.queryResult?.parameters || {};
+  return {
+    limit:
+      Number(parameters.limit) > 0
+        ? Math.min(Number(parameters.limit), 50) // hard cap
+        : DEFAULT_MAX_ITEMS,
+    page:
+      Number(parameters.page) > 0 ? Number(parameters.page) : 1, // non utilisé en backend texte, mais dispo si vous voulez étendre
+  };
+}
+
+/* =========================
+ * Handler d’intent générique
+ * ========================= */
+async function handleIntent(intentName, langCode, { limit }) {
   const config = intentConfig[intentName];
   if (!config) return null;
 
   const { url, icon, intro, empty, formatter, outro } = config;
-  const { data: items } = await api.get(url);
 
-  if (!Array.isArray(items) || items.length === 0) {
-    return empty;
+  // Récup data (avec cache + retries)
+  const data = await cachedGet(url);
+
+  const items = Array.isArray(data) ? data : [];
+  if (items.length === 0) {
+    // Si l’intent a un message empty dédié → utilisez-le, sinon message i18n générique
+    return empty || t(langCode).empty;
   }
-  return buildReply({ intro, icon, items, formatter, outro });
+
+  return buildReply({
+    intro,
+    icon,
+    items,
+    formatter,
+    outro,
+    maxItems: limit,
+    moreText: t(langCode).more,
+  });
 }
 
-// ---- Webhook ----
+/* =========================
+ * Webhook Dialogflow
+ * ========================= */
 app.post('/webhook', async (req, res) => {
+  const t0 = Date.now();
+  const langCode = req.body?.queryResult?.languageCode || 'en';
+  const i18n = t(langCode);
+
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
     if (!intentName) {
-      return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
+      return res.json({ fulfillmentText: i18n.unknown });
     }
 
-    const reply = await handleIntent(intentName);
+    const params = readDialogflowParams(req);
+    const reply = await handleIntent(intentName, langCode, params);
+
     if (!reply) {
-      return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
+      return res.json({ fulfillmentText: i18n.unknown });
     }
 
+    // Réponse compatible Dialogflow v2
     return res.json({
       fulfillmentText: reply,
       fulfillmentMessages: [{ text: { text: [reply] } }],
     });
   } catch (error) {
-    console.error('Webhook error:', error?.message);
-    return res.json({
-      fulfillmentText: 'Oops, something went wrong while fetching information. Please try again later!',
-    });
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        msg: 'Webhook error',
+        err: error?.message || String(error),
+        stack: error?.stack,
+        ms: Date.now() - t0,
+      })
+    );
+    return res.json({ fulfillmentText: t(langCode).error });
   }
 });
 
-// Route santé simple
+/* =========================
+ * Health & Infos
+ * ========================= */
 app.get('/', (_req, res) => res.send('OK'));
+app.get('/healthz', async (req, res) => {
+  // Optionnel : ping léger de l’API amont si ?deep=1
+  if (req.query.deep === '1') {
+    try {
+      await api.get('/healthz'); // s’il existe, sinon remplacez par un endpoint public léger
+      return res.json({ ok: true, upstream: 'ok', now: Date.now() });
+    } catch {
+      return res.status(502).json({ ok: false, upstream: 'down', now: Date.now() });
+    }
+  }
+  res.json({
+    ok: true,
+    version: '1.0.0',
+    uptime_s: Math.round(process.uptime()),
+    now: Date.now(),
+  });
+});
 
-// ---- Démarrage serveur ----
-const PORT = process.env.PORT || 3000;
+/* =========================
+ * Lancement serveur
+ * ========================= */
 app.listen(PORT, () => {
-  console.log(`Webhook is running on http://localhost:${PORT}`);
+  console.log(`Webhook running on http://localhost:${PORT}`);
 });
