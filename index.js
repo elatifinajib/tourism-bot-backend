@@ -1,4 +1,5 @@
-// index.js
+
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -8,15 +9,50 @@ app.use(bodyParser.json());
 
 // ---- Config API ----
 const BASE_URL = 'https://touristeproject.onrender.com/api/public';
-
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000, // 15s to avoid hanging requests
+  timeout: 15000,
 });
 
-// ---- Configuration des intents (toutes celles du code d'origine) ----
+// ---- Formatters ----
+function defaultFormatter(icon, item) {
+  const city = item.cityName ? ` (${item.cityName})` : '';
+  return `${icon} ${item.name}${city}`;
+}
+
+function formatFullAttraction(icon, item) {
+  let details = `${icon} ${item.name}`;
+
+  if (item.cityName) details += `\n🏙️ City: ${item.cityName}`;
+  if (item.countryName) details += `\n🌍 Country: ${item.countryName}`;
+  if (item.description) details += `\nℹ️ Description: ${item.description}`;
+  if (item.entryFre !== undefined) details += `\n💵 Entry Fee: ${item.entryFre}`;
+  if (item.guideToursAvailable !== undefined) {
+    details += `\n🗺️ Guided Tours: ${item.guideToursAvailable ? 'Yes' : 'No'}`;
+  }
+  if (item.protectedArea !== undefined) {
+    details += `\n🌿 Protected Area: ${item.protectedArea ? 'Yes' : 'No'}`;
+  }
+  if (item.style) details += `\n🏛️ Style: ${item.style}`;
+  if (item.yearBuild) details += `\n📅 Year Built: ${item.yearBuild}`;
+  if (item.latitude && item.longitude) {
+    details += `\n📍 Coordinates: ${item.latitude}, ${item.longitude}`;
+  }
+  if (Array.isArray(item.imageUrls) && item.imageUrls.length > 0) {
+    details += `\n🖼️ Images: ${item.imageUrls.join(', ')}`;
+  }
+  return details;
+}
+
+function buildReply({ intro, icon, items, formatter }) {
+  const fmt = formatter || defaultFormatter;
+  const list = items.map((i) => fmt(icon, i)).join('\n\n');
+  return `${intro}\n${list}`;
+}
+
+// ---- Configuration des intents ----
 const intentConfig = {
-  // ----------- Attractions -----------
+  // ----------- Attractions ----------- 
   Ask_All_Attractions: {
     url: '/getAll/Attraction',
     icon: '🌟',
@@ -48,202 +84,64 @@ const intentConfig = {
     empty: "I couldn't find any artificial attractions for you.",
   },
 
-  // ----------- Amenities -----------
-  Ask_All_Amenities: {
-    url: '/getAll/Amenities',
-    icon: '🏨',
-    intro: 'Here are some amenities that can enhance your visit:',
-    empty: "Sorry, I couldn't find any amenities for you.",
+  // ----------- Nouveaux intents ----------- 
+  Ask_Attraction_ByName: {
+    url: '/getLocationByName', // on ajoutera /{name}
+    icon: '📍',
+    intro: 'Here are the full details for this attraction:',
+    empty: "Sorry, I couldn't find details for this attraction.",
+    formatter: formatFullAttraction,
   },
-  Ask_Restaurants: {
-    url: '/Restaurants',
-    icon: '🍽️',
-    intro: 'Looking for a great place to eat? Here are some top restaurants:',
-    empty: "Sorry, I couldn't find any restaurants for you.",
-  },
-  Ask_Cafes: {
-    url: '/Cafes',
-    icon: '☕',
-    intro: 'Looking for a cozy place to relax? Here are some popular cafes:',
-    empty: "Sorry, I couldn't find any cafes for you.",
-  },
-  Ask_Campings: {
-    url: '/Camping',
-    icon: '🏕️',
-    intro: 'Ready to explore the great outdoors? Here are some beautiful camping spots:',
-    empty: "Sorry, I couldn't find any campgrounds for you.",
-  },
-  Ask_GuestHouses: {
-    url: '/GuestHouses',
-    icon: '🏡',
-    intro: 'Looking for a homey stay? Here are some lovely guest houses:',
-    empty: "Sorry, I couldn't find any guest houses for you.",
-  },
-  Ask_Hotels: {
-    url: '/Hotels',
-    icon: '🏨',
-    intro: 'Here are some of the best hotels for your stay:',
-    empty: "Sorry, I couldn't find any hotels for you.",
-  },
-  Ask_Lodges: {
-    url: '/Lodges',
-    icon: '🏞️',
-    intro: 'Escape into nature and stay at these amazing lodges:',
-    empty: "Sorry, I couldn’t find any lodges for you.",
-  },
-
-  // ----------- Activities -----------
-  Ask_All_Activities: {
-    url: '/getAll/Activities',
-    icon: '🎉',
-    intro: 'Looking for fun things to do? Here are some exciting activities to try:',
-    empty: "Sorry, I couldn't find any activities for you.",
-    // pas de ville dans le message d’origine
-    formatter: (icon, i) => `${icon} ${i.name}`,
-  },
-  Ask_Traditional_Activities: {
-    url: '/Activity/Traditional',
-    icon: '🎉',
-    intro: 'Want to experience some local traditions? Check out these amazing traditional activities:',
-    empty: "Sorry, I couldn't find any traditional activities for you.",
-    formatter: (icon, i) => `${icon} ${i.name}`,
-  },
-  Ask_Sports_Activities: {
-    url: '/Activity/Sports',
-    icon: '🏃‍♂️',
-    intro: 'Looking for some action? Here are the best sports activities to enjoy:',
-    empty: "Sorry, I couldn't find any sports activities for you.",
-    formatter: (icon, i) => `${icon} ${i.name}`,
-  },
-  Ask_Cultural_Activities: {
-    url: '/Activity/Cultural',
-    icon: '🎭',
-    intro: 'Immerse yourself in culture! Here are some wonderful cultural activities:',
-    empty: "Sorry, I couldn't find any cultural activities for you.",
-    formatter: (icon, i) => `${icon} ${i.name}`,
-  },
-  // NB : l’intent original s’appelle 'Ask_Adventural_Activities' (typo conservée)
-  Ask_Adventural_Activities: {
-    url: '/Activity/Adventure',
-    icon: '🏞️',
-    intro: 'Are you ready for some adventure? Here are some thrilling activities:',
-    empty: "Sorry, I couldn't find any adventure activities for you.",
-    formatter: (icon, i) => `${icon} ${i.name}`,
-  },
-
-  // ----------- Ancillary Services -----------
-  Ask_All_AncillaryServices: {
-    url: '/getAll/AncillaryService',
-    icon: '🛠️',
-    intro: 'Here are some additional services that can enhance your experience:',
-    empty: "Sorry, I couldn't find any ancillary services for you.",
-  },
-  Ask_All_TourGuide: {
-    url: '/Service/TourGuide',
-    icon: '👨‍🏫',
-    intro: 'Looking for a local guide? Here are some experienced tour guides:',
-    empty: "Sorry, I couldn't find any tour guides for you.",
-  },
-  Ask_All_Sanitary: {
-    url: '/Service/Sanitary',
-    icon: '💧',
-    intro: 'Here are some sanitary services available for you:',
-    empty: "Sorry, I couldn't find any sanitary services for you.",
-  },
-  Ask_All_CarAgency: {
-    url: '/Service/CarAgency',
-    icon: '🚗',
-    intro: 'Here are some car rental agencies to help you get around:',
-    empty: "Sorry, I couldn't find any car agencies for you.",
-  },
-  Ask_All_Administratives: {
-    url: '/Service/Administrative',
-    icon: '📑',
-    intro: 'Here are some administrative services you may need:',
-    empty: "Sorry, I couldn't find any administrative services for you.",
-  },
-  Ask_All_Banks: {
-    url: '/Service/Bank',
-    icon: '🏦',
-    intro: 'Here are some banks where you can manage your finances:',
-    empty: "Sorry, I couldn't find any banks for you.",
-  },
-
-  // ----------- Accessibility -----------
-  Ask_All_Accessibilities: {
-    url: '/getAll/Accessibility',
-    icon: '♿',
-    intro: 'Here are some accessibility services to make your visit more comfortable:',
-    empty: "Sorry, I couldn't find any accessibility services for you.",
-  },
-
-  // ----------- Transport -----------
-  Ask_All_Bus: {
-    url: '/Bus',
-    icon: '🚌',
-    intro: 'Looking for buses? Here are some bus services you can use:',
-    empty: "Sorry, I couldn't find any bus services for you.",
-  },
-  Ask_All_Fly: {
-    url: '/Fly',
-    icon: '✈️',
-    intro: 'Need a flight? Here are some flight services to get you to your destination:',
-    empty: "Sorry, I couldn't find any flight services for you.",
-  },
-  Ask_All_Taxi: {
-    url: '/Taxi',
-    icon: '🚖',
-    intro: 'Looking for a taxi? Here are some reliable taxi services:',
-    empty: "Sorry, I couldn't find any taxi services for you.",
-  },
-
-  // ----------- Available Packages -----------
-  Ask_All_AvailablePackages: {
-    url: '/getAll/available_Package',
-    icon: '🎁',
-    intro: 'Here are some amazing available packages for you to explore:',
-    empty: "Sorry, I couldn't find any available packages for you.",
+  Ask_Attraction_ByCity: {
+    url: '/getLocationByCity', // on ajoutera /{cityName}
+    icon: '🏙️',
+    intro: 'Here are the attractions in this city:',
+    empty: "I couldn't find attractions for this city.",
+    formatter: (icon, item) => `${icon} ${item.name} (${item.cityName})`,
   },
 };
 
-// ---- Helpers ----
-function defaultFormatter(icon, item) {
-  // par défaut : affiche le nom + la ville si présente
-  const city = item.cityName ? ` (${item.cityName})` : '';
-  return `${icon} ${item.name}${city}`;
-}
-
-function buildReply({ intro, icon, items, formatter }) {
-  const fmt = formatter || defaultFormatter;
-  const list = items.map((i) => fmt(icon, i)).join('\n');
-  return `${intro}\n${list}`;
-}
-
 // ---- Fonction générique ----
-async function handleIntent(intentName) {
+async function handleIntent(intentName, parameters) {
   const config = intentConfig[intentName];
   if (!config) return null;
 
-  const { url, icon, intro, empty, formatter } = config;
+  let { url, icon, intro, empty, formatter } = config;
+
+  // Cas particulier: ajout de paramètres dynamiques
+  if (intentName === 'Ask_Attraction_ByName') {
+    const name = parameters?.name;
+    if (!name) return "Please tell me the name of the attraction.";
+    url = `${url}/${encodeURIComponent(name)}`;
+  }
+
+  if (intentName === 'Ask_Attraction_ByCity') {
+    const cityName = parameters?.cityName;
+    if (!cityName) return "Please tell me the city name.";
+    url = `${url}/${encodeURIComponent(cityName)}`;
+  }
 
   const { data: items } = await api.get(url);
 
-  if (!Array.isArray(items) || items.length === 0) {
+  if (!items || (Array.isArray(items) && items.length === 0)) {
     return empty;
   }
 
-  return buildReply({ intro, icon, items, formatter });
+  const itemsArray = Array.isArray(items) ? items : [items];
+  return buildReply({ intro, icon, items: itemsArray, formatter });
 }
 
 // ---- Webhook ----
 app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
+    const parameters = req.body?.queryResult?.parameters;
+
     if (!intentName) {
       return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
     }
 
-    const reply = await handleIntent(intentName);
+    const reply = await handleIntent(intentName, parameters);
 
     if (!reply) {
       return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
@@ -261,10 +159,10 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Petite route de santé
+// Route santé
 app.get('/', (_req, res) => res.send('OK'));
 
-// ---- Démarrage serveur ----
+// ---- Lancement ----
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Webhook is running on http://localhost:${PORT}`);
