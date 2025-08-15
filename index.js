@@ -50,16 +50,17 @@ function buildReply({ intro, icon, items, formatter }) {
   return `${intro}\n${list}`;
 }
 
-// ---------------------- Helpers: normalisation, matching, fetch variants ----------------------
+// ---------------------- Helpers: normalisation & matching ----------------------
 function removeDiacritics(str = '') {
   return String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Title Case robuste (espaces, tirets, apostrophes)
 function toTitleCaseWord(word = '') {
   if (!word) return word;
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
+
+// Title Case robuste (espaces, tirets, apostrophes)
 function normalizeCityName(raw = '') {
   const s = String(raw).trim().toLowerCase();
   if (!s) return s;
@@ -80,20 +81,21 @@ function normalizeCityName(raw = '') {
     .join(' ');
 }
 
-// Comparaison de ville insensible à la casse et aux accents
+// Comparaison ville: insensible casse + accents
 function cityEquals(a = '', b = '') {
   return removeDiacritics(String(a).trim().toLowerCase()) ===
          removeDiacritics(String(b).trim().toLowerCase());
 }
 
-// Détection attraction (vs amenity)
+// Détecter une "attraction" (vs amenity) par présence de champs spécifiques
 function isAttraction(item) {
   const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
   const hasGuideTours = Object.prototype.hasOwnProperty.call(item, 'guideToursAvailable');
   return hasEntryFre || hasGuideTours;
 }
 
-// Génère des variantes de casse pour requêter un endpoint case-sensitive
+// ---------------------- Endpoint case-sensitive: variantes + fallback ----------------------
+// Génère des variantes de casse pour un endpoint case-sensitive
 function generateCityVariants(raw = '') {
   const title = normalizeCityName(raw);
   const low = title.toLowerCase();
@@ -120,14 +122,13 @@ async function fetchByCityWithVariants(cityRaw) {
         }
       }
     } catch (_e) {
-      // on essaie la prochaine variante
+      // on essaie la variante suivante
     }
   }
-
   return results;
 }
 
-// Fallback: scan global et filtre local (insensible casse/accents)
+// Fallback: fetch all attractions puis filtre localement par city (insensible casse/accents)
 async function fetchByCityFallbackScanning(cityRaw) {
   try {
     const { data } = await api.get('/getAll/Attraction');
@@ -140,7 +141,7 @@ async function fetchByCityFallbackScanning(cityRaw) {
 
 // ---------------------- Configuration des intents ----------------------
 const intentConfig = {
-  // ----------- Attractions -----------
+  // ----------- Attractions (globaux) -----------
   Ask_All_Attractions: {
     url: '/getAll/Attraction',
     icon: '🌟',
@@ -186,13 +187,47 @@ const intentConfig = {
     formatter: formatFullAttraction,
   },
 
-  // ----------- Attraction par ville -----------
+  // ----------- Attraction par ville (endpoint case-sensitive + fallback) -----------
   Ask_Attraction_ByCity: {
     url: '/getLocationByCity', // on appellera avec variantes et fallback
     icon: '🌆',
     intro: (city) => `Here are the attractions in ${city}:`,
     empty: (city) => `Sorry, I couldn't find attractions in ${city}.`,
     formatter: defaultFormatter, // ou formatFullAttraction
+  },
+
+  // ----------- Types d’attractions PAR VILLE (filtrage local) -----------
+  Ask_Natural_Attractions_ByCity: {
+    url: '/NaturalAttractions', // on récupère tout, puis on filtre localement par ville
+    icon: '🌿',
+    intro: (city) => `Natural attractions in ${city}:`,
+    empty: (city) => `No natural attractions found in ${city}.`,
+    formatter: defaultFormatter,
+    cityFiltered: true,
+  },
+  Ask_Historical_Attractions_ByCity: {
+    url: '/HistoricalAttractions',
+    icon: '🏛️',
+    intro: (city) => `Historical attractions in ${city}:`,
+    empty: (city) => `No historical attractions found in ${city}.`,
+    formatter: defaultFormatter,
+    cityFiltered: true,
+  },
+  Ask_Cultural_Attractions_ByCity: {
+    url: '/CulturalAttractions',
+    icon: '🎭',
+    intro: (city) => `Cultural attractions in ${city}:`,
+    empty: (city) => `No cultural attractions found in ${city}.`,
+    formatter: defaultFormatter,
+    cityFiltered: true,
+  },
+  Ask_Artificial_Attractions_ByCity: {
+    url: '/ArtificialAttractions',
+    icon: '🏙️',
+    intro: (city) => `Artificial attractions in ${city}:`,
+    empty: (city) => `No artificial attractions found in ${city}.`,
+    formatter: defaultFormatter,
+    cityFiltered: true,
   },
 };
 
@@ -201,31 +236,52 @@ async function handleIntent(intentName, parameters) {
   const config = intentConfig[intentName];
   if (!config) return null;
 
-  let { url, icon, intro, empty, formatter } = config;
+  let { url, icon, intro, empty, formatter, cityFiltered } = config;
 
-  // ---- ByName (simple) ----
+  // ---- ByName ----
   if (intentName === 'Ask_Attraction_ByName') {
     const name = (parameters?.name || '').toString().trim();
     if (!name) return 'Please tell me the name of the attraction.';
-    url = `${url}/${encodeURIComponent(name)}`;
+    const fullUrl = `${url}/${encodeURIComponent(name)}`;
 
     try {
-      const { data } = await api.get(url);
-      if (!data) return empty;
+      const { data } = await api.get(fullUrl);
       const arr = Array.isArray(data) ? data : [data];
-      if (!arr.length) return empty;
+      if (!arr?.length) return empty;
       return buildReply({ intro, icon, items: arr, formatter });
-    } catch (error) {
-      console.error('Fetch error:', error?.message);
+    } catch (e) {
+      console.error('Fetch error:', e?.message);
       return 'Oops, something went wrong while fetching information. Please try again later!';
     }
   }
 
-  // ---- ByCity (case-sensitive safe) ----
+  // ---- Types PAR VILLE (filtrage local) ----
+  if (cityFiltered) {
+    const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
+    if (!rawCity) return 'Please tell me the city name.';
+    const cityName = normalizeCityName(rawCity);
+    if (typeof intro === 'function') intro = intro(cityName);
+    if (typeof empty === 'function') empty = empty(cityName);
+
+    try {
+      const { data } = await api.get(url); // ex: /NaturalAttractions
+      const arr = Array.isArray(data) ? data : [data];
+
+      // filtre par ville (insensible casse/accents)
+      const byCity = arr.filter(it => cityEquals(it?.cityName || '', rawCity));
+
+      if (!byCity.length) return empty;
+      return buildReply({ intro, icon, items: byCity, formatter });
+    } catch (e) {
+      console.error('Fetch error:', e?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
+  }
+
+  // ---- ByCity “général” (endpoint case-sensitive + fallback) ----
   if (intentName === 'Ask_Attraction_ByCity') {
     const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
     if (!rawCity) return 'Please tell me the city name.';
-
     const normalizedCity = normalizeCityName(rawCity);
     if (typeof intro === 'function') intro = intro(normalizedCity);
     if (typeof empty === 'function') empty = empty(normalizedCity);
@@ -234,19 +290,18 @@ async function handleIntent(intentName, parameters) {
       // 1) Essais multi-variantes sur l'endpoint case-sensitive
       let items = await fetchByCityWithVariants(rawCity);
 
-      // 2) Fallback si aucun résultat
+      // 2) Fallback si aucun résultat: scan global & filtre local
       if (!items || items.length === 0) {
         items = await fetchByCityFallbackScanning(rawCity);
       }
 
-      // 3) Ne garder que les attractions
+      // 3) Ne garder que les attractions (élimine les amenities)
       const onlyAttractions = (items || []).filter(isAttraction);
 
       if (!onlyAttractions.length) return empty;
-
       return buildReply({ intro, icon, items: onlyAttractions, formatter });
-    } catch (error) {
-      console.error('Fetch error:', error?.message);
+    } catch (e) {
+      console.error('Fetch error:', e?.message);
       return 'Oops, something went wrong while fetching information. Please try again later!';
     }
   }
@@ -254,12 +309,11 @@ async function handleIntent(intentName, parameters) {
   // ---- Intents simples sans params dynamiques ----
   try {
     const { data } = await api.get(url);
-    if (!data) return config.empty;
     const arr = Array.isArray(data) ? data : [data];
-    if (!arr.length) return config.empty;
+    if (!arr?.length) return config.empty;
     return buildReply({ intro, icon, items: arr, formatter });
-  } catch (error) {
-    console.error('Fetch error:', error?.message);
+  } catch (e) {
+    console.error('Fetch error:', e?.message);
     return 'Oops, something went wrong while fetching information. Please try again later!';
   }
 }
