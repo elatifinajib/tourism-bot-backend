@@ -13,7 +13,7 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// ---- Formatters & helpers ----
+// ---- Helpers d'affichage ----
 function defaultFormatter(icon, item) {
   const city = item.cityName ? ` (${item.cityName})` : '';
   return `${icon} ${item.name}${city}`;
@@ -49,11 +49,11 @@ function buildReply({ intro, icon, items, formatter }) {
   return `${intro}\n${list}`;
 }
 
-// Détection attraction vs amenity selon les champs fournis par l’API
+// ---- Détection attraction vs amenity ----
 function isAttraction(item) {
   if (!item || typeof item !== 'object') return false;
 
-  // Champs caractéristiques des attractions
+  // Champs qui signalent une attraction
   const attractionFields = [
     'entryFre',
     'guideToursAvailable',
@@ -62,7 +62,7 @@ function isAttraction(item) {
     'yearBuild',
   ];
 
-  // Champs caractéristiques des amenities (hôtels, etc.)
+  // Champs qui signalent un amenity (hôtel, etc.)
   const amenityFields = [
     'price',
     'openingHours',
@@ -75,18 +75,24 @@ function isAttraction(item) {
   const hasAttractionField = attractionFields.some((f) => item[f] !== undefined);
   const hasAmenityField = amenityFields.some((f) => item[f] !== undefined);
 
-  // Si on a des marqueurs clairs d'attraction et pas d’amenity
   if (hasAttractionField && !hasAmenityField) return true;
-
-  // Si on a des marqueurs clairs d’amenity et pas d’attraction
   if (!hasAttractionField && hasAmenityField) return false;
 
-  // Cas ambigus:
-  // - Si des marqueurs amenity existent, on exclut par défaut
+  // Ambigu : on exclut si présence de marqueurs amenity
   if (hasAmenityField && !hasAttractionField) return false;
 
-  // Fallback: garder uniquement ce qui n’a pas l’air d’un amenity
+  // Fallback : garder ce qui n'a pas l'air d'un amenity
   return !hasAmenityField;
+}
+
+// ---- Normalisation ville (insensible casse/accents) ----
+function normalizeCity(str) {
+  if (!str) return str;
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 // ---- Configuration des intents ----
@@ -125,7 +131,7 @@ const intentConfig = {
 
   // ----------- Attraction par nom ----------- 
   Ask_Attraction_ByName: {
-    url: '/getLocationByName', // on ajoutera /{name}
+    url: '/getLocationByName', // + /{name}
     icon: '📍',
     intro: 'Here are the full details for this attraction:',
     empty: "Sorry, I couldn't find details for this attraction.",
@@ -134,14 +140,12 @@ const intentConfig = {
 
   // ----------- NEW: Attractions par ville -----------
   Ask_Attraction_ByCity: {
-    url: '/getLocationByCity', // on ajoutera /{cityName}
+    url: '/getLocationByCity', // + /{cityName}
     icon: '🌆',
-    // intro & empty seront personnalisés dynamiquement avec la ville
     intro: 'Attractions in this city:',
     empty: "I couldn't find attractions in this city.",
     filter: (items) => items.filter(isAttraction),
-    // tu peux activer le formatter détaillé si tu préfères :
-    // formatter: formatFullAttraction,
+    // formatter: formatFullAttraction, // décommente pour des fiches détaillées
   },
 };
 
@@ -152,45 +156,74 @@ async function handleIntent(intentName, parameters) {
 
   let { url, icon, intro, empty, formatter, filter } = config;
 
-  // Cas particuliers: paramètres dynamiques
+  // --- Cas 1 : Détails par nom
   if (intentName === 'Ask_Attraction_ByName') {
     const name = parameters?.name;
     if (!name) return "Please tell me the name of the attraction.";
     url = `${url}/${encodeURIComponent(name)}`;
+    try {
+      const { data } = await api.get(url);
+      if (!data) return empty;
+      const itemsArray = Array.isArray(data) ? data : [data];
+      return buildReply({ intro, icon, items: itemsArray, formatter });
+    } catch (err) {
+      console.error('API error (Ask_Attraction_ByName):', err?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
   }
 
+  // --- Cas 2 : Attractions par ville (avec fallback casse/accents)
   if (intentName === 'Ask_Attraction_ByCity') {
-    // Dans Dialogflow: entity @sys.geo-city -> paramètre cityName
-    const cityName = parameters?.cityName || parameters?.name; // fallback si le mapping diffère
-    if (!cityName) return "Please tell me the city name.";
-    url = `${url}/${encodeURIComponent(cityName)}`;
-    intro = `Discover top attractions in ${cityName}:`;
-    empty = `I couldn't find attractions in ${cityName}.`;
+    const originalCity = (parameters?.cityName || parameters?.name || '').toString().trim();
+    if (!originalCity) return "Please tell me the city name.";
+
+    const userIntro = `Discover top attractions in ${originalCity}:`;
+    const userEmpty = `I couldn't find attractions in ${originalCity}.`;
+
+    // 1) tentative telle quelle
+    const url1 = `${url}/${encodeURIComponent(originalCity)}`;
+    try {
+      let { data } = await api.get(url1);
+      let itemsArray = Array.isArray(data) ? data : (data ? [data] : []);
+      if (typeof filter === 'function') itemsArray = filter(itemsArray);
+
+      if (itemsArray.length > 0) {
+        return buildReply({ intro: userIntro, icon, items: itemsArray, formatter });
+      }
+
+      // 2) tentative normalisée
+      const normalized = normalizeCity(originalCity);
+      const needsFallback = normalized && normalized !== originalCity.toLowerCase();
+      if (needsFallback) {
+        const url2 = `${url}/${encodeURIComponent(normalized)}`;
+        const { data: data2 } = await api.get(url2);
+        let itemsArray2 = Array.isArray(data2) ? data2 : (data2 ? [data2] : []);
+        if (typeof filter === 'function') itemsArray2 = filter(itemsArray2);
+
+        if (itemsArray2.length > 0) {
+          return buildReply({ intro: userIntro, icon, items: itemsArray2, formatter });
+        }
+      }
+
+      return userEmpty;
+    } catch (err) {
+      console.error('API error (Ask_Attraction_ByCity):', err?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
   }
 
+  // --- Cas génériques (autres intents de liste)
   try {
     const { data } = await api.get(url);
+    if (!data || (Array.isArray(data) && data.length === 0)) return empty;
 
-    if (!data || (Array.isArray(data) && data.length === 0)) {
-      return empty;
-    }
-
-    // Normalise en tableau
     let itemsArray = Array.isArray(data) ? data : [data];
-
-    // Filtrage spécifique (ex: par ville, ne garder que les attractions)
-    if (typeof filter === 'function') {
-      itemsArray = filter(itemsArray);
-    }
-
-    if (!itemsArray || itemsArray.length === 0) {
-      return empty;
-    }
+    if (typeof filter === 'function') itemsArray = filter(itemsArray);
+    if (!itemsArray || itemsArray.length === 0) return empty;
 
     return buildReply({ intro, icon, items: itemsArray, formatter });
   } catch (err) {
-    // Gestion d’erreur plus parlante
-    console.error('API error:', err?.message);
+    console.error('API error (generic):', err?.message);
     return 'Oops, something went wrong while fetching information. Please try again later!';
   }
 }
