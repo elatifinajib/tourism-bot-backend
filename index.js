@@ -17,7 +17,7 @@ const api = axios.create({
 // ---- Formatters ----
 function defaultFormatter(icon, item) {
   const city = item.cityName ? ` (${item.cityName})` : '';
-  return `${icon} ${item.name}${city}`;
+  return `${icon} ${item.name}${cityName}`;
 }
 
 function formatFullAttraction(icon, item) {
