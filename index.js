@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -12,7 +13,7 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// ---- Formatters ----
+// ---- Formatters & helpers ----
 function defaultFormatter(icon, item) {
   const city = item.cityName ? ` (${item.cityName})` : '';
   return `${icon} ${item.name}${city}`;
@@ -46,6 +47,46 @@ function buildReply({ intro, icon, items, formatter }) {
   const fmt = formatter || defaultFormatter;
   const list = items.map((i) => fmt(icon, i)).join('\n\n');
   return `${intro}\n${list}`;
+}
+
+// Détection attraction vs amenity selon les champs fournis par l’API
+function isAttraction(item) {
+  if (!item || typeof item !== 'object') return false;
+
+  // Champs caractéristiques des attractions
+  const attractionFields = [
+    'entryFre',
+    'guideToursAvailable',
+    'style',
+    'protectedArea',
+    'yearBuild',
+  ];
+
+  // Champs caractéristiques des amenities (hôtels, etc.)
+  const amenityFields = [
+    'price',
+    'openingHours',
+    'numberStars',
+    'numberOfRooms',
+    'hasSwimmingPool',
+    'available',
+  ];
+
+  const hasAttractionField = attractionFields.some((f) => item[f] !== undefined);
+  const hasAmenityField = amenityFields.some((f) => item[f] !== undefined);
+
+  // Si on a des marqueurs clairs d'attraction et pas d’amenity
+  if (hasAttractionField && !hasAmenityField) return true;
+
+  // Si on a des marqueurs clairs d’amenity et pas d’attraction
+  if (!hasAttractionField && hasAmenityField) return false;
+
+  // Cas ambigus:
+  // - Si des marqueurs amenity existent, on exclut par défaut
+  if (hasAmenityField && !hasAttractionField) return false;
+
+  // Fallback: garder uniquement ce qui n’a pas l’air d’un amenity
+  return !hasAmenityField;
 }
 
 // ---- Configuration des intents ----
@@ -89,7 +130,19 @@ const intentConfig = {
     intro: 'Here are the full details for this attraction:',
     empty: "Sorry, I couldn't find details for this attraction.",
     formatter: formatFullAttraction,
-  }
+  },
+
+  // ----------- NEW: Attractions par ville -----------
+  Ask_Attraction_ByCity: {
+    url: '/getLocationByCity', // on ajoutera /{cityName}
+    icon: '🌆',
+    // intro & empty seront personnalisés dynamiquement avec la ville
+    intro: 'Attractions in this city:',
+    empty: "I couldn't find attractions in this city.",
+    filter: (items) => items.filter(isAttraction),
+    // tu peux activer le formatter détaillé si tu préfères :
+    // formatter: formatFullAttraction,
+  },
 };
 
 // ---- Fonction générique ----
@@ -97,23 +150,49 @@ async function handleIntent(intentName, parameters) {
   const config = intentConfig[intentName];
   if (!config) return null;
 
-  let { url, icon, intro, empty, formatter } = config;
+  let { url, icon, intro, empty, formatter, filter } = config;
 
-  // Cas particulier: ajout de paramètres dynamiques
+  // Cas particuliers: paramètres dynamiques
   if (intentName === 'Ask_Attraction_ByName') {
     const name = parameters?.name;
     if (!name) return "Please tell me the name of the attraction.";
     url = `${url}/${encodeURIComponent(name)}`;
   }
 
-  const { data: items } = await api.get(url);
-
-  if (!items || (Array.isArray(items) && items.length === 0)) {
-    return empty;
+  if (intentName === 'Ask_Attraction_ByCity') {
+    // Dans Dialogflow: entity @sys.geo-city -> paramètre cityName
+    const cityName = parameters?.cityName || parameters?.name; // fallback si le mapping diffère
+    if (!cityName) return "Please tell me the city name.";
+    url = `${url}/${encodeURIComponent(cityName)}`;
+    intro = `Discover top attractions in ${cityName}:`;
+    empty = `I couldn't find attractions in ${cityName}.`;
   }
 
-  const itemsArray = Array.isArray(items) ? items : [items];
-  return buildReply({ intro, icon, items: itemsArray, formatter });
+  try {
+    const { data } = await api.get(url);
+
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      return empty;
+    }
+
+    // Normalise en tableau
+    let itemsArray = Array.isArray(data) ? data : [data];
+
+    // Filtrage spécifique (ex: par ville, ne garder que les attractions)
+    if (typeof filter === 'function') {
+      itemsArray = filter(itemsArray);
+    }
+
+    if (!itemsArray || itemsArray.length === 0) {
+      return empty;
+    }
+
+    return buildReply({ intro, icon, items: itemsArray, formatter });
+  } catch (err) {
+    // Gestion d’erreur plus parlante
+    console.error('API error:', err?.message);
+    return 'Oops, something went wrong while fetching information. Please try again later!';
+  }
 }
 
 // ---- Webhook ----
