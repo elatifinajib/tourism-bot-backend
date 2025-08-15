@@ -1,4 +1,5 @@
 // server.js
+// ---------------------- Imports & Setup ----------------------
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -6,14 +7,14 @@ const axios = require('axios');
 const app = express();
 app.use(bodyParser.json());
 
-// ---- Config API ----
+// ---------------------- Config API ----------------------
 const BASE_URL = 'https://touristeproject.onrender.com/api/public';
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 15000,
 });
 
-// ---- Helpers d'affichage ----
+// ---------------------- Formatters ----------------------
 function defaultFormatter(icon, item) {
   const city = item.cityName ? ` (${item.cityName})` : '';
   return `${icon} ${item.name}${city}`;
@@ -29,6 +30,11 @@ function formatFullAttraction(icon, item) {
   if (item.guideToursAvailable !== undefined) {
     details += `\n🗺️ Guided Tours: ${item.guideToursAvailable ? 'Yes' : 'No'}`;
   }
+  if (item.protectedArea !== undefined) {
+    details += `\n🌿 Protected Area: ${item.protectedArea ? 'Yes' : 'No'}`;
+  }
+  if (item.style) details += `\n🏛️ Style: ${item.style}`;
+  if (item.yearBuild) details += `\n📅 Year Built: ${item.yearBuild}`;
   if (item.latitude && item.longitude) {
     details += `\n📍 Coordinates: ${item.latitude}, ${item.longitude}`;
   }
@@ -44,75 +50,54 @@ function buildReply({ intro, icon, items, formatter }) {
   return `${intro}\n${list}`;
 }
 
-// ---- Détection attraction vs amenity (selon tes champs réels) ----
-// Attraction = a (entryFre || guideToursAvailable)
-// Amenity    = a (price || openingHours || available)
+// ---------------------- Helpers ----------------------
+// Détection d'une "attraction" via champs présents uniquement sur les attractions
 function isAttraction(item) {
-  if (!item || typeof item !== 'object') return false;
-
-  const isAttractionSignal =
-    item.entryFre !== undefined || item.guideToursAvailable !== undefined;
-
-  const isAmenitySignal =
-    item.price !== undefined ||
-    item.openingHours !== undefined ||
-    item.available !== undefined;
-
-  // Si c'est marqué amenity et pas attraction -> exclure
-  if (!isAttractionSignal && isAmenitySignal) return false;
-
-  // Si c'est marqué attraction -> garder (même si quelques champs génériques existent)
-  if (isAttractionSignal) return true;
-
-  // Cas sans signal clair: par prudence, on exclut
-  return false;
+  const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
+  const hasGuideTours = Object.prototype.hasOwnProperty.call(item, 'guideToursAvailable');
+  return hasEntryFre || hasGuideTours;
 }
 
-// ---- Normalisation ville (insensible casse/accents) ----
-function normalizeCity(str) {
-  if (!str) return str;
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
-// ---- Configuration des intents ----
+// ---------------------- Configuration des intents ----------------------
 const intentConfig = {
-  // ----------- Attractions ----------- 
+  // ----------- Attractions -----------
   Ask_All_Attractions: {
     url: '/getAll/Attraction',
     icon: '🌟',
     intro: 'Discover the best attractions around! Here are some of the top spots:',
     empty: "Sorry, I couldn't find any attractions for you.",
+    formatter: defaultFormatter,
   },
   Ask_Natural_Attractions: {
     url: '/NaturalAttractions',
     icon: '🌿',
     intro: 'If you love nature, check out these amazing natural attractions:',
     empty: "I couldn't find any natural wonders for you.",
+    formatter: defaultFormatter,
   },
   Ask_Historical_Attractions: {
     url: '/HistoricalAttractions',
     icon: '🏛️',
     intro: 'Step back in time and explore these incredible historical sites:',
     empty: "I couldn't find any historical attractions for you.",
+    formatter: defaultFormatter,
   },
   Ask_Cultural_Attractions: {
     url: '/CulturalAttractions',
     icon: '🎭',
     intro: 'Immerse yourself in rich culture! Here are some of the best cultural attractions:',
     empty: "I couldn't find any cultural attractions for you.",
+    formatter: defaultFormatter,
   },
   Ask_Artificial_Attractions: {
     url: '/ArtificialAttractions',
     icon: '🏙️',
     intro: 'Check out these stunning artificial wonders:',
     empty: "I couldn't find any artificial attractions for you.",
+    formatter: defaultFormatter,
   },
 
-  // ----------- Attraction par nom ----------- 
+  // ----------- Attraction par nom -----------
   Ask_Attraction_ByName: {
     url: '/getLocationByName', // + /{name}
     icon: '📍',
@@ -121,97 +106,68 @@ const intentConfig = {
     formatter: formatFullAttraction,
   },
 
-  // ----------- Attractions par ville -----------
+  // ----------- Attraction par ville -----------
+  // L’endpoint retourne attractions + amenities — on filtrera côté serveur
   Ask_Attraction_ByCity: {
     url: '/getLocationByCity', // + /{cityName}
     icon: '🌆',
-    intro: 'Attractions in this city:',
-    empty: "I couldn't find attractions in this city.",
-    filter: (items) => items.filter(isAttraction),
-    // formatter: formatFullAttraction, // décommente si tu veux des fiches détaillées
+    // intro/empty dynamiques selon la ville
+    intro: (city) => `Here are the attractions in ${city}:`,
+    empty: (city) => `Sorry, I couldn't find attractions in ${city}.`,
+    // Choisis formatFullAttraction si tu veux des détails complets
+    formatter: defaultFormatter,
   },
 };
 
-// ---- Fonction générique ----
+// ---------------------- Fonction générique ----------------------
 async function handleIntent(intentName, parameters) {
   const config = intentConfig[intentName];
   if (!config) return null;
 
-  let { url, icon, intro, empty, formatter, filter } = config;
+  let { url, icon, intro, empty, formatter } = config;
 
-  // --- Cas 1 : Détails par nom
+  // Paramètres dynamiques par intent
   if (intentName === 'Ask_Attraction_ByName') {
-    const name = parameters?.name;
-    if (!name) return "Please tell me the name of the attraction.";
+    const name = (parameters?.name || '').toString().trim();
+    if (!name) return 'Please tell me the name of the attraction.';
     url = `${url}/${encodeURIComponent(name)}`;
-    try {
-      const { data } = await api.get(url);
-      if (!data) return empty;
-      const itemsArray = Array.isArray(data) ? data : [data];
-      return buildReply({ intro, icon, items: itemsArray, formatter });
-    } catch (err) {
-      console.error('API error (Ask_Attraction_ByName):', err?.message);
-      return 'Oops, something went wrong while fetching information. Please try again later!';
-    }
   }
 
-  // --- Cas 2 : Attractions par ville (avec fallback casse/accents)
   if (intentName === 'Ask_Attraction_ByCity') {
-    const originalCity = (parameters?.cityName || parameters?.name || '').toString().trim();
-    if (!originalCity) return "Please tell me the city name.";
+    // Selon ton mapping Dialogflow: entity @sys.geo-city → paramètre "cityName"
+    // (fallback sur "name" au cas où)
+    const cityName = (parameters?.cityName || parameters?.name || '').toString().trim();
+    if (!cityName) return 'Please tell me the city name.';
+    url = `${url}/${encodeURIComponent(cityName)}`;
 
-    const userIntro = `Discover top attractions in ${originalCity}:`;
-    const userEmpty = `I couldn't find attractions in ${originalCity}.`;
-
-    // 1) tentative telle quelle
-    const url1 = `${url}/${encodeURIComponent(originalCity)}`;
-    try {
-      let { data } = await api.get(url1);
-      let itemsArray = Array.isArray(data) ? data : (data ? [data] : []);
-      if (typeof filter === 'function') itemsArray = filter(itemsArray);
-
-      if (itemsArray.length > 0) {
-        return buildReply({ intro: userIntro, icon, items: itemsArray, formatter });
-      }
-
-      // 2) tentative normalisée (minuscules + sans accents)
-      const normalized = normalizeCity(originalCity);
-      const needsFallback = normalized && normalized !== originalCity.toLowerCase();
-      if (needsFallback) {
-        const url2 = `${url}/${encodeURIComponent(normalized)}`;
-        const { data: data2 } = await api.get(url2);
-        let itemsArray2 = Array.isArray(data2) ? data2 : (data2 ? [data2] : []);
-        if (typeof filter === 'function') itemsArray2 = filter(itemsArray2);
-
-        if (itemsArray2.length > 0) {
-          return buildReply({ intro: userIntro, icon, items: itemsArray2, formatter });
-        }
-      }
-
-      return userEmpty;
-    } catch (err) {
-      console.error('API error (Ask_Attraction_ByCity):', err?.message);
-      return 'Oops, something went wrong while fetching information. Please try again later!';
-    }
+    // intro/empty peuvent être des fonctions => on les résout ici
+    if (typeof intro === 'function') intro = intro(cityName);
+    if (typeof empty === 'function') empty = empty(cityName);
   }
 
-  // --- Cas génériques (autres intents de liste)
   try {
     const { data } = await api.get(url);
-    if (!data || (Array.isArray(data) && data.length === 0)) return empty;
+    if (!data) return empty;
 
-    let itemsArray = Array.isArray(data) ? data : [data];
-    if (typeof filter === 'function') itemsArray = filter(itemsArray);
-    if (!itemsArray || itemsArray.length === 0) return empty;
+    // Normaliser en tableau
+    const itemsArray = Array.isArray(data) ? data : [data];
 
-    return buildReply({ intro, icon, items: itemsArray, formatter });
-  } catch (err) {
-    console.error('API error (generic):', err?.message);
+    // Filtrage spécifique pour Ask_Attraction_ByCity
+    const filteredItems =
+      intentName === 'Ask_Attraction_ByCity'
+        ? itemsArray.filter(isAttraction)
+        : itemsArray;
+
+    if (!filteredItems || filteredItems.length === 0) return empty;
+
+    return buildReply({ intro, icon, items: filteredItems, formatter });
+  } catch (error) {
+    console.error('Fetch error:', error?.message);
     return 'Oops, something went wrong while fetching information. Please try again later!';
   }
 }
 
-// ---- Webhook ----
+// ---------------------- Webhook ----------------------
 app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
@@ -239,10 +195,10 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Route santé
+// ---------------------- Health Route ----------------------
 app.get('/', (_req, res) => res.send('OK'));
 
-// ---- Lancement ----
+// ---------------------- Lancement ----------------------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Webhook is running on http://localhost:${PORT}`);
