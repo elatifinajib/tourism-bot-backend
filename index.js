@@ -58,6 +58,30 @@ function isAttraction(item) {
   return hasEntryFre || hasGuideTours;
 }
 
+// Normalisation d'un nom de ville : Title Case mot par mot (espaces, tirets, apostrophes)
+function normalizeCityName(raw = '') {
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return s;
+  // Sépare par espace en conservant les séparateurs
+  return s
+    .split(' ')
+    .map(part =>
+      part
+        .split('-')
+        .map(seg =>
+          seg
+            .split("'")
+            .map(sub =>
+              sub ? sub.charAt(0).toUpperCase() + sub.slice(1) : sub
+            )
+            .join("'")
+        )
+        .map(seg => (seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg))
+        .join('-')
+    )
+    .join(' ');
+}
+
 // ---------------------- Configuration des intents ----------------------
 const intentConfig = {
   // ----------- Attractions -----------
@@ -114,7 +138,7 @@ const intentConfig = {
     // intro/empty dynamiques selon la ville
     intro: (city) => `Here are the attractions in ${city}:`,
     empty: (city) => `Sorry, I couldn't find attractions in ${city}.`,
-    // Choisis formatFullAttraction si tu veux des détails complets
+    // Choisir formatFullAttraction si tu veux des fiches détaillées
     formatter: defaultFormatter,
   },
 };
@@ -134,10 +158,13 @@ async function handleIntent(intentName, parameters) {
   }
 
   if (intentName === 'Ask_Attraction_ByCity') {
-    // Selon ton mapping Dialogflow: entity @sys.geo-city → paramètre "cityName"
-    // (fallback sur "name" au cas où)
-    const cityName = (parameters?.cityName || parameters?.name || '').toString().trim();
-    if (!cityName) return 'Please tell me the city name.';
+    // Dialogflow: entity @sys.geo-city → paramètre "cityName" (fallback "name" au cas où)
+    const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
+    if (!rawCity) return 'Please tell me the city name.';
+
+    // 🔹 Normalisation de la ville (indépendant de la casse saisie par l’utilisateur)
+    const cityName = normalizeCityName(rawCity);
+
     url = `${url}/${encodeURIComponent(cityName)}`;
 
     // intro/empty peuvent être des fonctions => on les résout ici
@@ -152,7 +179,7 @@ async function handleIntent(intentName, parameters) {
     // Normaliser en tableau
     const itemsArray = Array.isArray(data) ? data : [data];
 
-    // Filtrage spécifique pour Ask_Attraction_ByCity
+    // Filtrage spécifique pour Ask_Attraction_ByCity : ne garder que les attractions
     const filteredItems =
       intentName === 'Ask_Attraction_ByCity'
         ? itemsArray.filter(isAttraction)
