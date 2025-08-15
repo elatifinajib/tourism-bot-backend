@@ -14,58 +14,32 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// ---- Normalizer: rend les clés homogènes quel que soit l'endpoint ----
-function normalizeAttraction(item = {}) {
-  return {
-    // champs de base (avec fallbacks)
-    name: item.name ?? item.attractionName ?? item.locationName ?? 'Unknown',
-    cityName: item.cityName ?? item.city ?? item.town ?? 'Unknown',
-    countryName: item.countryName ?? item.country,
-    description: item.description ?? item.details ?? item.summary,
-
-    // reste des métadonnées
-    entryFre: item.entryFre ?? item.entryFee ?? item.price,
-    guideToursAvailable: item.guideToursAvailable ?? item.guidedTours ?? item.toursAvailable,
-    protectedArea: item.protectedArea ?? item.isProtected,
-    style: item.style,
-    yearBuild: item.yearBuild ?? item.yearBuilt ?? item.builtYear,
-    latitude: item.latitude ?? item.lat,
-    longitude: item.longitude ?? item.lng,
-    imageUrls: item.imageUrls ?? item.images ?? item.photos,
-
-    // brut pour debug
-    _raw: item,
-  };
-}
-
 // ---- Formatters ----
 function defaultFormatter(icon, item) {
-  const name = item?.name ?? 'Unknown';
-  const city = item?.cityName ? ` (${item.cityName})` : '';
-  return `${icon} ${name}${city}`;
+  const city = item.cityName ? ` (${item.cityName})` : '';
+  return `${icon} ${item.name}${city}`;
 }
 
 function formatFullAttraction(icon, item) {
-  const it = normalizeAttraction(item); // safety: même si on oublie de normaliser avant
-  let details = `${icon} ${it.name}`;
+  let details = `${icon} ${item.name}`;
 
-  if (it.cityName) details += `\n🏙️ City: ${it.cityName}`;
-  if (it.countryName) details += `\n🌍 Country: ${it.countryName}`;
-  if (it.description) details += `\nℹ️ Description: ${it.description}`;
-  if (it.entryFre !== undefined) details += `\n💵 Entry Fee: ${it.entryFre}`;
-  if (it.guideToursAvailable !== undefined) {
-    details += `\n🗺️ Guided Tours: ${it.guideToursAvailable ? 'Yes' : 'No'}`;
+  if (item.cityName) details += `\n🏙️ City: ${item.cityName}`;
+  if (item.countryName) details += `\n🌍 Country: ${item.countryName}`;
+  if (item.description) details += `\nℹ️ Description: ${item.description}`;
+  if (item.entryFre !== undefined) details += `\n💵 Entry Fee: ${item.entryFre}`;
+  if (item.guideToursAvailable !== undefined) {
+    details += `\n🗺️ Guided Tours: ${item.guideToursAvailable ? 'Yes' : 'No'}`;
   }
-  if (it.protectedArea !== undefined) {
-    details += `\n🌿 Protected Area: ${it.protectedArea ? 'Yes' : 'No'}`;
+  if (item.protectedArea !== undefined) {
+    details += `\n🌿 Protected Area: ${item.protectedArea ? 'Yes' : 'No'}`;
   }
-  if (it.style) details += `\n🏛️ Style: ${it.style}`;
-  if (it.yearBuild) details += `\n📅 Year Built: ${it.yearBuild}`;
-  if (it.latitude && it.longitude) {
-    details += `\n📍 Coordinates: ${it.latitude}, ${it.longitude}`;
+  if (item.style) details += `\n🏛️ Style: ${item.style}`;
+  if (item.yearBuild) details += `\n📅 Year Built: ${item.yearBuild}`;
+  if (item.latitude && item.longitude) {
+    details += `\n📍 Coordinates: ${item.latitude}, ${item.longitude}`;
   }
-  if (Array.isArray(it.imageUrls) && it.imageUrls.length > 0) {
-    details += `\n🖼️ Images: ${it.imageUrls.join(', ')}`;
+  if (Array.isArray(item.imageUrls) && item.imageUrls.length > 0) {
+    details += `\n🖼️ Images: ${item.imageUrls.join(', ')}`;
   }
   return details;
 }
@@ -112,24 +86,18 @@ const intentConfig = {
 
   // ----------- Nouveaux intents ----------- 
   Ask_Attraction_ByName: {
-    url: '/getLocationByName', // + /{name}
+    url: '/getLocationByName', // on ajoutera /{name}
     icon: '📍',
     intro: 'Here are the full details for this attraction:',
     empty: "Sorry, I couldn't find details for this attraction.",
     formatter: formatFullAttraction,
   },
   Ask_Attraction_ByCity: {
-    url: '/getLocationByCity', // + /{cityName}
+    url: '/getLocationByCity', // on ajoutera /{cityName}
     icon: '🏙️',
     intro: 'Here are the attractions in this city:',
-    empty: "I couldn't find attractions for this city.",
-    // Formatter simple mais tolérant
-    formatter: (icon, item) => {
-      const it = normalizeAttraction(item);
-      const name = it.name ?? 'Unknown';
-      const city = it.cityName ?? 'Unknown';
-      return `${icon} ${name} (${city})`;
-    },
+    empty: "I couldn't find attractions for this city."
+    // pas de formatter -> utilisation de defaultFormatter
   },
 };
 
@@ -144,29 +112,22 @@ async function handleIntent(intentName, parameters) {
   if (intentName === 'Ask_Attraction_ByName') {
     const name = parameters?.name;
     if (!name) return "Please tell me the name of the attraction.";
-    url = `${url}/${encodeURIComponent(name)}`;
+    url = `${url}/${encodeURIComponent(String(name).trim())}`;
   }
 
   if (intentName === 'Ask_Attraction_ByCity') {
     const cityName = parameters?.cityName;
     if (!cityName) return "Please tell me the city name.";
-    url = `${url}/${encodeURIComponent(cityName)}`;
+    url = `${url}/${encodeURIComponent(String(cityName).trim())}`;
   }
 
-  // Appel API + logs de debug
   const { data: items } = await api.get(url);
-  console.log(`${intentName} url:`, url);
-  console.log(`${intentName} sample item:`, Array.isArray(items) ? items[0] : items);
 
-  // Pas de résultats
   if (!items || (Array.isArray(items) && items.length === 0)) {
     return empty;
   }
 
-  // Normalisation systématique avant formatage
-  const rawArray = Array.isArray(items) ? items : [items];
-  const itemsArray = rawArray.map(normalizeAttraction);
-
+  const itemsArray = Array.isArray(items) ? items : [items];
   return buildReply({ intro, icon, items: itemsArray, formatter });
 }
 
