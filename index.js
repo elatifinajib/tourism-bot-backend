@@ -1,5 +1,3 @@
-'use strict';
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -84,21 +82,14 @@ const intentConfig = {
     empty: "I couldn't find any artificial attractions for you.",
   },
 
-  // ----------- Nouveaux intents ----------- 
+  // ----------- Attraction par nom ----------- 
   Ask_Attraction_ByName: {
     url: '/getLocationByName', // on ajoutera /{name}
     icon: '📍',
     intro: 'Here are the full details for this attraction:',
     empty: "Sorry, I couldn't find details for this attraction.",
     formatter: formatFullAttraction,
-  },
-  Ask_Attraction_ByCity: {
-    url: '/getLocationByCity', // on ajoutera /{cityName}
-    icon: '🏙️',
-    intro: 'Here are the attractions in this city:',
-    empty: "I couldn't find attractions for this city."
-    // pas de formatter -> utilisation de defaultFormatter
-  },
+  }
 };
 
 // ---- Fonction générique ----
@@ -112,13 +103,7 @@ async function handleIntent(intentName, parameters) {
   if (intentName === 'Ask_Attraction_ByName') {
     const name = parameters?.name;
     if (!name) return "Please tell me the name of the attraction.";
-    url = `${url}/${encodeURIComponent(String(name).trim())}`;
-  }
-
-  if (intentName === 'Ask_Attraction_ByCity') {
-    const cityName = parameters?.cityName;
-    if (!cityName) return "Please tell me the city name.";
-    url = `${url}/${encodeURIComponent(String(cityName).trim())}`;
+    url = `${url}/${encodeURIComponent(name)}`;
   }
 
   const { data: items } = await api.get(url);
