@@ -50,19 +50,19 @@ function buildReply({ intro, icon, items, formatter }) {
   return `${intro}\n${list}`;
 }
 
-// ---------------------- Helpers ----------------------
-// Détection d'une "attraction" via champs présents uniquement sur les attractions
-function isAttraction(item) {
-  const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
-  const hasGuideTours = Object.prototype.hasOwnProperty.call(item, 'guideToursAvailable');
-  return hasEntryFre || hasGuideTours;
+// ---------------------- Helpers: normalisation & matching ----------------------
+function removeDiacritics(str = '') {
+  return String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Normalisation d'un nom de ville : Title Case mot par mot (espaces, tirets, apostrophes)
+// Title Case robuste: espaces, tirets, apostrophes (ex: "saint-etienne" -> "Saint-Etienne")
+function toTitleCaseWord(word = '') {
+  if (!word) return word;
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
 function normalizeCityName(raw = '') {
   const s = String(raw).trim().toLowerCase();
   if (!s) return s;
-  // Sépare par espace en conservant les séparateurs
   return s
     .split(' ')
     .map(part =>
@@ -71,15 +71,73 @@ function normalizeCityName(raw = '') {
         .map(seg =>
           seg
             .split("'")
-            .map(sub =>
-              sub ? sub.charAt(0).toUpperCase() + sub.slice(1) : sub
-            )
+            .map(sub => toTitleCaseWord(sub))
             .join("'")
         )
-        .map(seg => (seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg))
+        .map(seg => toTitleCaseWord(seg))
         .join('-')
     )
     .join(' ');
+}
+
+// Comparaison ville: insensible casse + accents
+function cityEquals(a = '', b = '') {
+  return removeDiacritics(String(a).trim().toLowerCase()) ===
+         removeDiacritics(String(b).trim().toLowerCase());
+}
+
+// Détecter une "attraction" (vs amenity) par présence de champs spécifiques
+function isAttraction(item) {
+  const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
+  const hasGuideTours = Object.prototype.hasOwnProperty.call(item, 'guideToursAvailable');
+  return hasEntryFre || hasGuideTours;
+}
+
+// Génère plusieurs variantes pour requêter l'endpoint sensible à la casse
+function generateCityVariants(raw = '') {
+  const norm = normalizeCityName(raw); // Title Case
+  const low = norm.toLowerCase();
+  const up = norm.toUpperCase();
+  const uniq = Array.from(new Set([norm, low, up]));
+  return uniq;
+}
+
+// Appel endpoint /getLocationByCity/{city} en essayant plusieurs variantes
+async function fetchByCityWithVariants(cityRaw) {
+  const variants = generateCityVariants(cityRaw);
+  const results = [];
+  const seen = new Set(); // dé-duplication par id ou (name|city)
+
+  for (const v of variants) {
+    try {
+      const { data } = await api.get(`/getLocationByCity/${encodeURIComponent(v)}`);
+      if (!data) continue;
+      const arr = Array.isArray(data) ? data : [data];
+
+      for (const item of arr) {
+        const key = item?.id != null ? `id:${item.id}` : `nk:${item?.name || ''}|${item?.cityName || ''}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push(item);
+        }
+      }
+    } catch (_err) {
+      // on ignore et on tente la variante suivante
+    }
+  }
+
+  return results;
+}
+
+// Fallback: fetch all attractions puis filtre localement par city (insensible à casse/accents)
+async function fetchByCityFallbackScanning(cityRaw) {
+  try {
+    const { data } = await api.get('/getAll/Attraction');
+    const arr = Array.isArray(data) ? data : [data];
+    return arr.filter(item => cityEquals(item?.cityName || '', cityRaw));
+  } catch (_err) {
+    return [];
+  }
 }
 
 // ---------------------- Configuration des intents ----------------------
@@ -131,15 +189,13 @@ const intentConfig = {
   },
 
   // ----------- Attraction par ville -----------
-  // L’endpoint retourne attractions + amenities — on filtrera côté serveur
   Ask_Attraction_ByCity: {
-    url: '/getLocationByCity', // + /{cityName}
+    // on ne met pas la ville ici car on va appeler plusieurs variantes et fallback
+    url: '/getLocationByCity',
     icon: '🌆',
-    // intro/empty dynamiques selon la ville
     intro: (city) => `Here are the attractions in ${city}:`,
     empty: (city) => `Sorry, I couldn't find attractions in ${city}.`,
-    // Choisir formatFullAttraction si tu veux des fiches détaillées
-    formatter: defaultFormatter,
+    formatter: defaultFormatter, // ou formatFullAttraction pour plus de détails
   },
 };
 
@@ -150,44 +206,61 @@ async function handleIntent(intentName, parameters) {
 
   let { url, icon, intro, empty, formatter } = config;
 
-  // Paramètres dynamiques par intent
   if (intentName === 'Ask_Attraction_ByName') {
     const name = (parameters?.name || '').toString().trim();
     if (!name) return 'Please tell me the name of the attraction.';
     url = `${url}/${encodeURIComponent(name)}`;
+
+    try {
+      const { data } = await api.get(url);
+      if (!data) return empty;
+      const itemsArray = Array.isArray(data) ? data : [data];
+      if (!itemsArray.length) return empty;
+      return buildReply({ intro, icon, items: itemsArray, formatter });
+    } catch (error) {
+      console.error('Fetch error:', error?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
   }
 
   if (intentName === 'Ask_Attraction_ByCity') {
-    // Dialogflow: entity @sys.geo-city → paramètre "cityName" (fallback "name" au cas où)
     const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
     if (!rawCity) return 'Please tell me the city name.';
 
-    // 🔹 Normalisation de la ville (indépendant de la casse saisie par l’utilisateur)
-    const cityName = normalizeCityName(rawCity);
+    const normalizedCity = normalizeCityName(rawCity);
+    if (typeof intro === 'function') intro = intro(normalizedCity);
+    if (typeof empty === 'function') empty = empty(normalizedCity);
 
-    url = `${url}/${encodeURIComponent(cityName)}`;
+    try {
+      // 1) Tentatives multi-variantes sur l'endpoint
+      let items = await fetchByCityWithVariants(rawCity);
 
-    // intro/empty peuvent être des fonctions => on les résout ici
-    if (typeof intro === 'function') intro = intro(cityName);
-    if (typeof empty === 'function') empty = empty(cityName);
+      // 2) Fallback si rien trouvé: scan global & filtre local
+      if (!items || items.length === 0) {
+        items = await fetchByCityFallbackScanning(rawCity);
+      }
+
+      // 3) Filtre attractions uniquement
+      const onlyAttractions = (items || []).filter(isAttraction);
+
+      if (!onlyAttractions.length) return empty;
+
+      return buildReply({ intro, icon, items: onlyAttractions, formatter });
+    } catch (error) {
+      console.error('Fetch error:', error?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
   }
 
+  // Intents simples (pas de params dynamiques)
   try {
     const { data } = await api.get(url);
-    if (!data) return empty;
+    if (!data) return config.empty;
 
-    // Normaliser en tableau
     const itemsArray = Array.isArray(data) ? data : [data];
+    if (!itemsArray.length) return config.empty;
 
-    // Filtrage spécifique pour Ask_Attraction_ByCity : ne garder que les attractions
-    const filteredItems =
-      intentName === 'Ask_Attraction_ByCity'
-        ? itemsArray.filter(isAttraction)
-        : itemsArray;
-
-    if (!filteredItems || filteredItems.length === 0) return empty;
-
-    return buildReply({ intro, icon, items: filteredItems, formatter });
+    return buildReply({ intro, icon, items: itemsArray, formatter });
   } catch (error) {
     console.error('Fetch error:', error?.message);
     return 'Oops, something went wrong while fetching information. Please try again later!';
