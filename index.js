@@ -50,12 +50,12 @@ function buildReply({ intro, icon, items, formatter }) {
   return `${intro}\n${list}`;
 }
 
-// ---------------------- Helpers: normalisation & matching ----------------------
+// ---------------------- Helpers: normalisation, matching, fetch variants ----------------------
 function removeDiacritics(str = '') {
   return String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Title Case robuste: espaces, tirets, apostrophes (ex: "saint-etienne" -> "Saint-Etienne")
+// Title Case robuste (espaces, tirets, apostrophes)
 function toTitleCaseWord(word = '') {
   if (!word) return word;
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
@@ -80,40 +80,38 @@ function normalizeCityName(raw = '') {
     .join(' ');
 }
 
-// Comparaison ville: insensible casse + accents
+// Comparaison de ville insensible à la casse et aux accents
 function cityEquals(a = '', b = '') {
   return removeDiacritics(String(a).trim().toLowerCase()) ===
          removeDiacritics(String(b).trim().toLowerCase());
 }
 
-// Détecter une "attraction" (vs amenity) par présence de champs spécifiques
+// Détection attraction (vs amenity)
 function isAttraction(item) {
   const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
   const hasGuideTours = Object.prototype.hasOwnProperty.call(item, 'guideToursAvailable');
   return hasEntryFre || hasGuideTours;
 }
 
-// Génère plusieurs variantes pour requêter l'endpoint sensible à la casse
+// Génère des variantes de casse pour requêter un endpoint case-sensitive
 function generateCityVariants(raw = '') {
-  const norm = normalizeCityName(raw); // Title Case
-  const low = norm.toLowerCase();
-  const up = norm.toUpperCase();
-  const uniq = Array.from(new Set([norm, low, up]));
-  return uniq;
+  const title = normalizeCityName(raw);
+  const low = title.toLowerCase();
+  const up = title.toUpperCase();
+  return Array.from(new Set([title, low, up]));
 }
 
-// Appel endpoint /getLocationByCity/{city} en essayant plusieurs variantes
+// Essaie /getLocationByCity avec plusieurs variantes
 async function fetchByCityWithVariants(cityRaw) {
   const variants = generateCityVariants(cityRaw);
   const results = [];
-  const seen = new Set(); // dé-duplication par id ou (name|city)
+  const seen = new Set();
 
   for (const v of variants) {
     try {
       const { data } = await api.get(`/getLocationByCity/${encodeURIComponent(v)}`);
       if (!data) continue;
       const arr = Array.isArray(data) ? data : [data];
-
       for (const item of arr) {
         const key = item?.id != null ? `id:${item.id}` : `nk:${item?.name || ''}|${item?.cityName || ''}`;
         if (!seen.has(key)) {
@@ -121,21 +119,21 @@ async function fetchByCityWithVariants(cityRaw) {
           results.push(item);
         }
       }
-    } catch (_err) {
-      // on ignore et on tente la variante suivante
+    } catch (_e) {
+      // on essaie la prochaine variante
     }
   }
 
   return results;
 }
 
-// Fallback: fetch all attractions puis filtre localement par city (insensible à casse/accents)
+// Fallback: scan global et filtre local (insensible casse/accents)
 async function fetchByCityFallbackScanning(cityRaw) {
   try {
     const { data } = await api.get('/getAll/Attraction');
     const arr = Array.isArray(data) ? data : [data];
     return arr.filter(item => cityEquals(item?.cityName || '', cityRaw));
-  } catch (_err) {
+  } catch (_e) {
     return [];
   }
 }
@@ -190,12 +188,11 @@ const intentConfig = {
 
   // ----------- Attraction par ville -----------
   Ask_Attraction_ByCity: {
-    // on ne met pas la ville ici car on va appeler plusieurs variantes et fallback
-    url: '/getLocationByCity',
+    url: '/getLocationByCity', // on appellera avec variantes et fallback
     icon: '🌆',
     intro: (city) => `Here are the attractions in ${city}:`,
     empty: (city) => `Sorry, I couldn't find attractions in ${city}.`,
-    formatter: defaultFormatter, // ou formatFullAttraction pour plus de détails
+    formatter: defaultFormatter, // ou formatFullAttraction
   },
 };
 
@@ -206,6 +203,7 @@ async function handleIntent(intentName, parameters) {
 
   let { url, icon, intro, empty, formatter } = config;
 
+  // ---- ByName (simple) ----
   if (intentName === 'Ask_Attraction_ByName') {
     const name = (parameters?.name || '').toString().trim();
     if (!name) return 'Please tell me the name of the attraction.';
@@ -214,15 +212,16 @@ async function handleIntent(intentName, parameters) {
     try {
       const { data } = await api.get(url);
       if (!data) return empty;
-      const itemsArray = Array.isArray(data) ? data : [data];
-      if (!itemsArray.length) return empty;
-      return buildReply({ intro, icon, items: itemsArray, formatter });
+      const arr = Array.isArray(data) ? data : [data];
+      if (!arr.length) return empty;
+      return buildReply({ intro, icon, items: arr, formatter });
     } catch (error) {
       console.error('Fetch error:', error?.message);
       return 'Oops, something went wrong while fetching information. Please try again later!';
     }
   }
 
+  // ---- ByCity (case-sensitive safe) ----
   if (intentName === 'Ask_Attraction_ByCity') {
     const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
     if (!rawCity) return 'Please tell me the city name.';
@@ -232,15 +231,15 @@ async function handleIntent(intentName, parameters) {
     if (typeof empty === 'function') empty = empty(normalizedCity);
 
     try {
-      // 1) Tentatives multi-variantes sur l'endpoint
+      // 1) Essais multi-variantes sur l'endpoint case-sensitive
       let items = await fetchByCityWithVariants(rawCity);
 
-      // 2) Fallback si rien trouvé: scan global & filtre local
+      // 2) Fallback si aucun résultat
       if (!items || items.length === 0) {
         items = await fetchByCityFallbackScanning(rawCity);
       }
 
-      // 3) Filtre attractions uniquement
+      // 3) Ne garder que les attractions
       const onlyAttractions = (items || []).filter(isAttraction);
 
       if (!onlyAttractions.length) return empty;
@@ -252,15 +251,13 @@ async function handleIntent(intentName, parameters) {
     }
   }
 
-  // Intents simples (pas de params dynamiques)
+  // ---- Intents simples sans params dynamiques ----
   try {
     const { data } = await api.get(url);
     if (!data) return config.empty;
-
-    const itemsArray = Array.isArray(data) ? data : [data];
-    if (!itemsArray.length) return config.empty;
-
-    return buildReply({ intro, icon, items: itemsArray, formatter });
+    const arr = Array.isArray(data) ? data : [data];
+    if (!arr.length) return config.empty;
+    return buildReply({ intro, icon, items: arr, formatter });
   } catch (error) {
     console.error('Fetch error:', error?.message);
     return 'Oops, something went wrong while fetching information. Please try again later!';
