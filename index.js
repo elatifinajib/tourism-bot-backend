@@ -29,11 +29,6 @@ function formatFullAttraction(icon, item) {
   if (item.guideToursAvailable !== undefined) {
     details += `\n🗺️ Guided Tours: ${item.guideToursAvailable ? 'Yes' : 'No'}`;
   }
-  if (item.protectedArea !== undefined) {
-    details += `\n🌿 Protected Area: ${item.protectedArea ? 'Yes' : 'No'}`;
-  }
-  if (item.style) details += `\n🏛️ Style: ${item.style}`;
-  if (item.yearBuild) details += `\n📅 Year Built: ${item.yearBuild}`;
   if (item.latitude && item.longitude) {
     details += `\n📍 Coordinates: ${item.latitude}, ${item.longitude}`;
   }
@@ -49,40 +44,28 @@ function buildReply({ intro, icon, items, formatter }) {
   return `${intro}\n${list}`;
 }
 
-// ---- Détection attraction vs amenity ----
+// ---- Détection attraction vs amenity (selon tes champs réels) ----
+// Attraction = a (entryFre || guideToursAvailable)
+// Amenity    = a (price || openingHours || available)
 function isAttraction(item) {
   if (!item || typeof item !== 'object') return false;
 
-  // Champs qui signalent une attraction
-  const attractionFields = [
-    'entryFre',
-    'guideToursAvailable',
-    'style',
-    'protectedArea',
-    'yearBuild',
-  ];
+  const isAttractionSignal =
+    item.entryFre !== undefined || item.guideToursAvailable !== undefined;
 
-  // Champs qui signalent un amenity (hôtel, etc.)
-  const amenityFields = [
-    'price',
-    'openingHours',
-    'numberStars',
-    'numberOfRooms',
-    'hasSwimmingPool',
-    'available',
-  ];
+  const isAmenitySignal =
+    item.price !== undefined ||
+    item.openingHours !== undefined ||
+    item.available !== undefined;
 
-  const hasAttractionField = attractionFields.some((f) => item[f] !== undefined);
-  const hasAmenityField = amenityFields.some((f) => item[f] !== undefined);
+  // Si c'est marqué amenity et pas attraction -> exclure
+  if (!isAttractionSignal && isAmenitySignal) return false;
 
-  if (hasAttractionField && !hasAmenityField) return true;
-  if (!hasAttractionField && hasAmenityField) return false;
+  // Si c'est marqué attraction -> garder (même si quelques champs génériques existent)
+  if (isAttractionSignal) return true;
 
-  // Ambigu : on exclut si présence de marqueurs amenity
-  if (hasAmenityField && !hasAttractionField) return false;
-
-  // Fallback : garder ce qui n'a pas l'air d'un amenity
-  return !hasAmenityField;
+  // Cas sans signal clair: par prudence, on exclut
+  return false;
 }
 
 // ---- Normalisation ville (insensible casse/accents) ----
@@ -138,14 +121,14 @@ const intentConfig = {
     formatter: formatFullAttraction,
   },
 
-  // ----------- NEW: Attractions par ville -----------
+  // ----------- Attractions par ville -----------
   Ask_Attraction_ByCity: {
     url: '/getLocationByCity', // + /{cityName}
     icon: '🌆',
     intro: 'Attractions in this city:',
     empty: "I couldn't find attractions in this city.",
     filter: (items) => items.filter(isAttraction),
-    // formatter: formatFullAttraction, // décommente pour des fiches détaillées
+    // formatter: formatFullAttraction, // décommente si tu veux des fiches détaillées
   },
 };
 
@@ -191,7 +174,7 @@ async function handleIntent(intentName, parameters) {
         return buildReply({ intro: userIntro, icon, items: itemsArray, formatter });
       }
 
-      // 2) tentative normalisée
+      // 2) tentative normalisée (minuscules + sans accents)
       const normalized = normalizeCity(originalCity);
       const needsFallback = normalized && normalized !== originalCity.toLowerCase();
       if (needsFallback) {
