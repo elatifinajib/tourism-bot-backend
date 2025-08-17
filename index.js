@@ -1,17 +1,11 @@
 // server.js
 // ---------------------- Imports & Setup ----------------------
 const express = require('express');
+const bodyParser = require('body-parser');
 const axios = require('axios');
 
 const app = express();
-// body-parser n'est plus nécessaire depuis Express 4.16+
-app.use(express.json());
-
-// ---------------------- Message d'accueil par défaut ----------------------
-const WELCOME_TEXT =
-  '👋 Bonjour ! Je suis votre assistant de voyage 🤖. ' +
-  'Je peux vous aider à découvrir des attractions par ville, type ou nom. ' +
-  'Dites-moi par exemple : "Attractions à Marrakech" ou "Sites historiques à Fès".';
+app.use(bodyParser.json());
 
 // ---------------------- Config API ----------------------
 const BASE_URL = 'https://touristeproject.onrender.com/api/public';
@@ -20,94 +14,209 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// ---------------------- Formatters ----------------------
-function defaultFormatter(icon, item) {
-  const city = item.cityName ? ` (${item.cityName})` : '';
-  return `${icon} ${item.name}${city}`;
+// ---------------------- Utils: Logging ----------------------
+function logInfo(msg, meta = {}) {
+  try {
+    console.log(`[INFO] ${msg} :: ${JSON.stringify(meta)}`);
+  } catch {
+    console.log(`[INFO] ${msg}`);
+  }
 }
-
-function formatFullAttraction(icon, item) {
-  let details = `${icon} ${item.name}`;
-
-  if (item.cityName) details += `\n🏙️ City: ${item.cityName}`;
-  if (item.countryName) details += `\n🌍 Country: ${item.countryName}`;
-  if (item.description) details += `\nℹ️ Description: ${item.description}`;
-  // NOTE: le champ s'appelle "entryFre" dans ton code — je le garde tel quel
-  if (item.entryFre !== undefined) details += `\n💵 Entry Fee: ${item.entryFre}`;
-  if (item.guideToursAvailable !== undefined) {
-    details += `\n🗺️ Guided Tours: ${item.guideToursAvailable ? 'Yes' : 'No'}`;
+function logError(msg, meta = {}) {
+  try {
+    console.error(`[ERROR] ${msg} :: ${JSON.stringify(meta)}`);
+  } catch {
+    console.error(`[ERROR] ${msg}`);
   }
-  if (item.protectedArea !== undefined) {
-    details += `\n🌿 Protected Area: ${item.protectedArea ? 'Yes' : 'No'}`;
-  }
-  if (item.style) details += `\n🏛️ Style: ${item.style}`;
-  if (item.yearBuild) details += `\n📅 Year Built: ${item.yearBuild}`;
-  if (item.latitude && item.longitude) {
-    details += `\n📍 Coordinates: ${item.latitude}, ${item.longitude}`;
-  }
-  if (Array.isArray(item.imageUrls) && item.imageUrls.length > 0) {
-    details += `\n🖼️ Images: ${item.imageUrls.join(', ')}`;
-  }
-  return details;
-}
-
-function buildReply({ intro, icon, items, formatter }) {
-  const fmt = formatter || defaultFormatter;
-  const list = items.map((i) => fmt(icon, i)).join('\n\n');
-  return `${intro}\n${list}`;
 }
 
 // ---------------------- Helpers: normalisation & matching ----------------------
 function removeDiacritics(str = '') {
   return String(str).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
-
 function toTitleCaseWord(word = '') {
   if (!word) return word;
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
-
 // Title Case robuste (espaces, tirets, apostrophes)
 function normalizeCityName(raw = '') {
   const s = String(raw).trim().toLowerCase();
   if (!s) return s;
   return s
     .split(' ')
-    .map((part) =>
+    .map(part =>
       part
         .split('-')
-        .map((seg) =>
+        .map(seg =>
           seg
             .split("'")
-            .map((sub) => toTitleCaseWord(sub))
+            .map(sub => toTitleCaseWord(sub))
             .join("'")
         )
-        .map((seg) => toTitleCaseWord(seg))
+        .map(seg => toTitleCaseWord(seg))
         .join('-')
     )
     .join(' ');
 }
-
 // Comparaison ville: insensible casse + accents
 function cityEquals(a = '', b = '') {
-  return (
-    removeDiacritics(String(a).trim().toLowerCase()) ===
-    removeDiacritics(String(b).trim().toLowerCase())
-  );
+  return removeDiacritics(String(a).trim().toLowerCase()) ===
+         removeDiacritics(String(b).trim().toLowerCase());
 }
 
-// Détecter une "attraction" (vs amenity) par présence de champs spécifiques
-function isAttraction(item) {
-  const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
-  const hasGuideTours = Object.prototype.hasOwnProperty.call(
-    item,
-    'guideToursAvailable'
-  );
-  return hasEntryFre || hasGuideTours;
+// ---------------------- Détection du type + formatters ----------------------
+// Heuristiques simples (adaptables si tu ajoutes un champ "type" côté API)
+function detectType(item = {}) {
+  // Si l'API expose déjà item.type, on le respecte
+  const t = String(item.type || '').toLowerCase();
+  if (t.includes('natural')) return 'natural';
+  if (t.includes('histor')) return 'historical';
+  if (t.includes('cultur')) return 'cultural';
+  if (t.includes('artific') || t.includes('modern') || t.includes('man-made')) return 'artificial';
+
+  // Heuristiques par attributs:
+  if (item.protectedArea === true || item.guideToursAvailable === true) return 'natural';
+  if (item.yearBuild || item.style) return 'historical';
+  // Si style existe mais sans yearBuild on peut classer culturel
+  if (item.style && !item.yearBuild) return 'cultural';
+  // Fallback
+  return 'generic';
+}
+
+function pickImages(item) {
+  if (!Array.isArray(item.imageUrls)) return null;
+  const imgs = item.imageUrls.slice(0, 2).filter(Boolean);
+  return imgs.length ? imgs : null;
+}
+
+function baseLines(icon, item) {
+  let lines = [`${icon} ${item.name || 'Unknown'}`];
+  if (item.cityName) lines.push(`🏙️ City: ${item.cityName}`);
+  if (item.countryName) lines.push(`🌍 Country: ${item.countryName}`);
+  return lines;
+}
+
+function formatNaturalAttraction(icon, item) {
+  const lines = baseLines(icon, item);
+  if (item.description) lines.push(`ℹ️ ${item.description}`);
+  if (item.entryFre !== undefined) lines.push(`💵 Entry Fee: ${item.entryFre}`);
+  if (item.guideToursAvailable !== undefined)
+    lines.push(`🗺️ Guided Tours: ${item.guideToursAvailable ? 'Yes' : 'No'}`);
+  if (item.protectedArea !== undefined)
+    lines.push(`🌿 Protected Area: ${item.protectedArea ? 'Yes' : 'No'}`);
+  if (item.latitude && item.longitude)
+    lines.push(`📍 Coordinates: ${item.latitude}, ${item.longitude}`);
+  const imgs = pickImages(item);
+  if (imgs) lines.push(`🖼️ Images: ${imgs.join(', ')}`);
+  return lines.join('\n');
+}
+
+function formatHistoricalAttraction(icon, item) {
+  const lines = baseLines(icon, item);
+  if (item.description) lines.push(`ℹ️ ${item.description}`);
+  if (item.style) lines.push(`🏛️ Style: ${item.style}`);
+  if (item.yearBuild) lines.push(`📅 Year Built: ${item.yearBuild}`);
+  if (item.entryFre !== undefined) lines.push(`💵 Entry Fee: ${item.entryFre}`);
+  if (item.latitude && item.longitude)
+    lines.push(`📍 Coordinates: ${item.latitude}, ${item.longitude}`);
+  const imgs = pickImages(item);
+  if (imgs) lines.push(`🖼️ Images: ${imgs.join(', ')}`);
+  return lines.join('\n');
+}
+
+function formatCulturalAttraction(icon, item) {
+  const lines = baseLines(icon, item);
+  if (item.description) lines.push(`ℹ️ ${item.description}`);
+  if (item.style) lines.push(`🎨 Style: ${item.style}`);
+  if (item.entryFre !== undefined) lines.push(`💵 Entry Fee: ${item.entryFre}`);
+  if (item.latitude && item.longitude)
+    lines.push(`📍 Coordinates: ${item.latitude}, ${item.longitude}`);
+  const imgs = pickImages(item);
+  if (imgs) lines.push(`🖼️ Images: ${imgs.join(', ')}`);
+  return lines.join('\n');
+}
+
+function formatArtificialAttraction(icon, item) {
+  const lines = baseLines(icon, item);
+  if (item.description) lines.push(`ℹ️ ${item.description}`);
+  if (item.yearBuild) lines.push(`📅 Year Opened: ${item.yearBuild}`);
+  if (item.entryFre !== undefined) lines.push(`💵 Entry Fee: ${item.entryFre}`);
+  if (item.latitude && item.longitude)
+    lines.push(`📍 Coordinates: ${item.latitude}, ${item.longitude}`);
+  const imgs = pickImages(item);
+  if (imgs) lines.push(`🖼️ Images: ${imgs.join(', ')}`);
+  return lines.join('\n');
+}
+
+function formatGenericAttraction(icon, item) {
+  const lines = baseLines(icon, item);
+  if (item.description) lines.push(`ℹ️ ${item.description}`);
+  if (item.entryFre !== undefined) lines.push(`💵 Entry Fee: ${item.entryFre}`);
+  if (item.style) lines.push(`🏛️ Style: ${item.style}`);
+  if (item.yearBuild) lines.push(`📅 Year Built: ${item.yearBuild}`);
+  if (item.latitude && item.longitude)
+    lines.push(`📍 Coordinates: ${item.latitude}, ${item.longitude}`);
+  const imgs = pickImages(item);
+  if (imgs) lines.push(`🖼️ Images: ${imgs.join(', ')}`);
+  return lines.join('\n');
+}
+
+function selectFormatterForItem(icon, item) {
+  const type = detectType(item);
+  switch (type) {
+    case 'natural': return (ic, it) => formatNaturalAttraction(ic, it);
+    case 'historical': return (ic, it) => formatHistoricalAttraction(ic, it);
+    case 'cultural': return (ic, it) => formatCulturalAttraction(ic, it);
+    case 'artificial': return (ic, it) => formatArtificialAttraction(ic, it);
+    default: return (ic, it) => formatGenericAttraction(ic, it);
+  }
+}
+
+// ---------------------- Formatters "liste" ----------------------
+function defaultFormatter(icon, item) {
+  const city = item.cityName ? ` (${item.cityName})` : '';
+  return `${icon} ${item.name || 'Unknown'}${city}`;
+}
+function formatFullAttraction(icon, item) {
+  // Dispatcher par type
+  const fmt = selectFormatterForItem(icon, item);
+  return fmt(icon, item);
+}
+
+// ---------------------- Réponses + Chips (Dialogflow Messenger) ----------------------
+function buildReply({ intro, icon, items, formatter }) {
+  const fmt = formatter || defaultFormatter;
+  const list = items.map((i) => fmt(icon, i)).join('\n\n');
+  return `${intro}\n${list}`;
+}
+
+// Chips Dialogflow Messenger (payload "richContent")
+function buildChips(chips = []) {
+  if (!chips?.length) return null;
+  return {
+    payload: {
+      richContent: [[
+        {
+          type: 'chips',
+          options: chips.map(label => ({ text: label })),
+        },
+      ]],
+    },
+    platform: 'WEB' // Dialogflow Messenger (web demo)
+  };
+}
+
+function replyWithTextAndChips(text, chips = []) {
+  const messages = [{ text: { text: [text] } }];
+  const chipPayload = buildChips(chips);
+  if (chipPayload) messages.push(chipPayload);
+  return {
+    fulfillmentText: text,
+    fulfillmentMessages: messages,
+  };
 }
 
 // ---------------------- Endpoint case-sensitive: variantes + fallback ----------------------
-// Génère des variantes de casse pour un endpoint case-sensitive
 function generateCityVariants(raw = '') {
   const title = normalizeCityName(raw);
   const low = title.toLowerCase();
@@ -123,21 +232,22 @@ async function fetchByCityWithVariants(cityRaw) {
 
   for (const v of variants) {
     try {
-      const { data } = await api.get(`/getLocationByCity/${encodeURIComponent(v)}`);
+      const path = `/getLocationByCity/${encodeURIComponent(v)}`;
+      logInfo('GET variant', { path, city: v });
+      const { data, status } = await api.get(path);
+      logInfo('Response variant', { status, city: v });
+
       if (!data) continue;
       const arr = Array.isArray(data) ? data : [data];
       for (const item of arr) {
-        const key =
-          item?.id != null
-            ? `id:${item.id}`
-            : `nk:${item?.name || ''}|${item?.cityName || ''}`;
+        const key = item?.id != null ? `id:${item.id}` : `nk:${item?.name || ''}|${item?.cityName || ''}`;
         if (!seen.has(key)) {
           seen.add(key);
           results.push(item);
         }
       }
-    } catch (_e) {
-      // on essaie la variante suivante
+    } catch (e) {
+      logError('Variant fetch failed', { city: v, error: e?.message });
     }
   }
   return results;
@@ -146,12 +256,27 @@ async function fetchByCityWithVariants(cityRaw) {
 // Fallback: fetch all attractions puis filtre localement par city (insensible casse/accents)
 async function fetchByCityFallbackScanning(cityRaw) {
   try {
-    const { data } = await api.get('/getAll/Attraction');
+    const path = '/getAll/Attraction';
+    logInfo('GET fallback scan', { path, city: cityRaw });
+    const { data, status } = await api.get(path);
+    logInfo('Response fallback scan', { status, city: cityRaw });
+
     const arr = Array.isArray(data) ? data : [data];
-    return arr.filter((item) => cityEquals(item?.cityName || '', cityRaw));
-  } catch (_e) {
+    return arr.filter(item => cityEquals(item?.cityName || '', cityRaw));
+  } catch (e) {
+    logError('Fallback scan failed', { city: cityRaw, error: e?.message });
     return [];
   }
+}
+
+// Détecter une "attraction" (vs amenity) par présence de champs spécifiques
+function isAttraction(item) {
+  const hasEntryFre = Object.prototype.hasOwnProperty.call(item, 'entryFre');
+  const hasGuideTours = Object.prototype.hasOwnProperty.call(item, 'guideToursAvailable');
+  // Ajoutons d'autres signaux positifs
+  const hasStyle = Object.prototype.hasOwnProperty.call(item, 'style');
+  const hasYear = Object.prototype.hasOwnProperty.call(item, 'yearBuild');
+  return hasEntryFre || hasGuideTours || hasStyle || hasYear;
 }
 
 // ---------------------- Configuration des intents ----------------------
@@ -163,6 +288,7 @@ const intentConfig = {
     intro: 'Discover the best attractions around! Here are some of the top spots:',
     empty: "Sorry, I couldn't find any attractions for you.",
     formatter: defaultFormatter,
+    chips: ['By City 🏙️', 'Natural 🌿', 'Historical 🏛️', 'Cultural 🎭', 'Artificial 🏙️'],
   },
   Ask_Natural_Attractions: {
     url: '/NaturalAttractions',
@@ -170,6 +296,7 @@ const intentConfig = {
     intro: 'If you love nature, check out these amazing natural attractions:',
     empty: "I couldn't find any natural wonders for you.",
     formatter: defaultFormatter,
+    chips: ['Filter by City 🏙️', 'All Attractions 🌟'],
   },
   Ask_Historical_Attractions: {
     url: '/HistoricalAttractions',
@@ -177,6 +304,7 @@ const intentConfig = {
     intro: 'Step back in time and explore these incredible historical sites:',
     empty: "I couldn't find any historical attractions for you.",
     formatter: defaultFormatter,
+    chips: ['Filter by City 🏙️', 'All Attractions 🌟'],
   },
   Ask_Cultural_Attractions: {
     url: '/CulturalAttractions',
@@ -184,6 +312,7 @@ const intentConfig = {
     intro: 'Immerse yourself in rich culture! Here are some of the best cultural attractions:',
     empty: "I couldn't find any cultural attractions for you.",
     formatter: defaultFormatter,
+    chips: ['Filter by City 🏙️', 'All Attractions 🌟'],
   },
   Ask_Artificial_Attractions: {
     url: '/ArtificialAttractions',
@@ -191,6 +320,7 @@ const intentConfig = {
     intro: 'Check out these stunning artificial wonders:',
     empty: "I couldn't find any artificial attractions for you.",
     formatter: defaultFormatter,
+    chips: ['Filter by City 🏙️', 'All Attractions 🌟'],
   },
 
   // ----------- Attraction par nom -----------
@@ -200,6 +330,7 @@ const intentConfig = {
     intro: 'Here are the full details for this attraction:',
     empty: "Sorry, I couldn't find details for this attraction.",
     formatter: formatFullAttraction,
+    chips: ['All Attractions 🌟', 'Search by City 🏙️'],
   },
 
   // ----------- Attraction par ville (endpoint case-sensitive + fallback) -----------
@@ -208,7 +339,14 @@ const intentConfig = {
     icon: '🌆',
     intro: (city) => `Here are the attractions in ${city}:`,
     empty: (city) => `Sorry, I couldn't find attractions in ${city}.`,
-    formatter: defaultFormatter, // ou formatFullAttraction
+    formatter: defaultFormatter, // liste courte
+    chipsForCity: (city) => [
+      `Natural in ${city} 🌿`,
+      `Historical in ${city} 🏛️`,
+      `Cultural in ${city} 🎭`,
+      `Artificial in ${city} 🏙️`,
+      'All Attractions 🌟',
+    ],
   },
 
   // ----------- Types d’attractions PAR VILLE (filtrage local) -----------
@@ -256,80 +394,94 @@ async function handleIntent(intentName, parameters) {
   // ---- ByName ----
   if (intentName === 'Ask_Attraction_ByName') {
     const name = (parameters?.name || '').toString().trim();
-    if (!name) return 'Please tell me the name of the attraction.';
+    if (!name) return replyWithTextAndChips('Please tell me the name of the attraction.', ['All Attractions 🌟', 'Search by City 🏙️']);
     const fullUrl = `${url}/${encodeURIComponent(name)}`;
 
     try {
-      const { data } = await api.get(fullUrl);
+      logInfo('Fetch ByName', { intentName, url: fullUrl, params: parameters });
+      const { data, status } = await api.get(fullUrl);
+      logInfo('Response ByName', { status, name });
+
       const arr = Array.isArray(data) ? data : [data];
-      if (!arr?.length) return empty;
-      return buildReply({ intro, icon, items: arr, formatter });
+      if (!arr?.length) return replyWithTextAndChips(config.empty, config.chips);
+
+      // Détails complets (formatter par type item à item)
+      const detailedList = arr.map(item => formatFullAttraction(icon, item)).join('\n\n');
+      return replyWithTextAndChips(`${config.intro}\n${detailedList}`, config.chips);
     } catch (e) {
-      console.error('Fetch error:', e?.message);
-      return 'Oops, something went wrong while fetching information. Please try again later!';
+      logError('Fetch error ByName', { error: e?.message, url: fullUrl });
+      return replyWithTextAndChips('Oops, something went wrong while fetching information. Please try again later!', ['All Attractions 🌟']);
     }
   }
 
   // ---- Types PAR VILLE (filtrage local) ----
   if (cityFiltered) {
     const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
-    if (!rawCity) return 'Please tell me the city name.';
+    if (!rawCity) return replyWithTextAndChips('Please tell me the city name.', ['Casablanca', 'Marrakech', 'Fes']);
     const cityName = normalizeCityName(rawCity);
     if (typeof intro === 'function') intro = intro(cityName);
     if (typeof empty === 'function') empty = empty(cityName);
 
     try {
-      const { data } = await api.get(url); // ex: /NaturalAttractions
+      logInfo('Fetch TypeByCity (local filter)', { intentName, url, city: rawCity, params: parameters });
+      const { data, status } = await api.get(url); // ex: /NaturalAttractions
+      logInfo('Response TypeByCity', { status, url });
+
       const arr = Array.isArray(data) ? data : [data];
+      const byCity = arr.filter(it => cityEquals(it?.cityName || '', rawCity));
 
-      // filtre par ville (insensible casse/accents)
-      const byCity = arr.filter((it) => cityEquals(it?.cityName || '', rawCity));
-
-      if (!byCity.length) return empty;
-      return buildReply({ intro, icon, items: byCity, formatter });
+      if (!byCity.length) return replyWithTextAndChips(empty, ['All Attractions 🌟', `Ask attractions in ${cityName}`]);
+      const text = buildReply({ intro, icon, items: byCity, formatter });
+      return replyWithTextAndChips(text, ['All Attractions 🌟', `More in ${cityName}`]);
     } catch (e) {
-      console.error('Fetch error:', e?.message);
-      return 'Oops, something went wrong while fetching information. Please try again later!';
+      logError('Fetch error TypeByCity', { error: e?.message, url, city: rawCity });
+      return replyWithTextAndChips('Oops, something went wrong while fetching information. Please try again later!', ['All Attractions 🌟']);
     }
   }
 
   // ---- ByCity “général” (endpoint case-sensitive + fallback) ----
   if (intentName === 'Ask_Attraction_ByCity') {
     const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
-    if (!rawCity) return 'Please tell me the city name.';
+    if (!rawCity) return replyWithTextAndChips('Please tell me the city name.', ['Casablanca', 'Marrakech', 'Fes']);
+
     const normalizedCity = normalizeCityName(rawCity);
     if (typeof intro === 'function') intro = intro(normalizedCity);
     if (typeof empty === 'function') empty = empty(normalizedCity);
 
     try {
-      // 1) Essais multi-variantes sur l'endpoint case-sensitive
+      logInfo('Fetch ByCity', { intentName, city: rawCity });
       let items = await fetchByCityWithVariants(rawCity);
-
-      // 2) Fallback si aucun résultat: scan global & filtre local
       if (!items || items.length === 0) {
+        logInfo('ByCity empty -> Fallback scan', { city: rawCity });
         items = await fetchByCityFallbackScanning(rawCity);
       }
 
-      // 3) Ne garder que les attractions (élimine les amenities)
       const onlyAttractions = (items || []).filter(isAttraction);
+      if (!onlyAttractions.length) return replyWithTextAndChips(empty, config.chipsForCity ? config.chipsForCity(normalizedCity) : ['All Attractions 🌟']);
 
-      if (!onlyAttractions.length) return empty;
-      return buildReply({ intro, icon, items: onlyAttractions, formatter });
+      const text = buildReply({ intro, icon, items: onlyAttractions, formatter });
+      const chips = config.chipsForCity ? config.chipsForCity(normalizedCity) : ['All Attractions 🌟'];
+      return replyWithTextAndChips(text, chips);
     } catch (e) {
-      console.error('Fetch error:', e?.message);
-      return 'Oops, something went wrong while fetching information. Please try again later!';
+      logError('Fetch error ByCity', { error: e?.message, city: rawCity });
+      return replyWithTextAndChips('Oops, something went wrong while fetching information. Please try again later!', ['All Attractions 🌟']);
     }
   }
 
   // ---- Intents simples sans params dynamiques ----
   try {
-    const { data } = await api.get(url);
+    logInfo('Fetch Simple', { intentName, url });
+    const { data, status } = await api.get(url);
+    logInfo('Response Simple', { status, url });
+
     const arr = Array.isArray(data) ? data : [data];
-    if (!arr?.length) return intentConfig[intentName].empty;
-    return buildReply({ intro, icon, items: arr, formatter });
+    if (!arr?.length) return replyWithTextAndChips(config.empty, config.chips || ['All Attractions 🌟']);
+
+    const text = buildReply({ intro, icon, items: arr, formatter });
+    return replyWithTextAndChips(text, config.chips || ['All Attractions 🌟']);
   } catch (e) {
-    console.error('Fetch error:', e?.message);
-    return 'Oops, something went wrong while fetching information. Please try again later!';
+    logError('Fetch error Simple', { error: e?.message, url });
+    return replyWithTextAndChips('Oops, something went wrong while fetching information. Please try again later!', ['All Attractions 🌟']);
   }
 }
 
@@ -338,38 +490,20 @@ app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
     const parameters = req.body?.queryResult?.parameters;
-    const action = req.body?.queryResult?.action;
-    const queryText = req.body?.queryResult?.queryText;
 
-    // 1) Cas "premier message" ou action welcome (Dialogflow ES déclenche input.welcome)
-    const looksLikeWelcome =
-      action === 'input.welcome' ||
-      !intentName ||
-      (typeof queryText === 'string' && queryText.trim() === '');
-
-    if (looksLikeWelcome) {
-      return res.json({
-        fulfillmentText: WELCOME_TEXT,
-        fulfillmentMessages: [{ text: { text: [WELCOME_TEXT] } }],
-      });
-    }
-
-    // 2) Reste des intents gérés normalement
-    const reply = await handleIntent(intentName, parameters);
-
-    if (!reply) {
+    if (!intentName) {
       return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
     }
 
-    return res.json({
-      fulfillmentText: reply,
-      fulfillmentMessages: [{ text: { text: [reply] } }],
-    });
+    const response = await handleIntent(intentName, parameters);
+    if (!response) {
+      return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
+    }
+    return res.json(response);
   } catch (error) {
-    console.error('Webhook error:', error?.message);
+    logError('Webhook error', { error: error?.message });
     return res.json({
-      fulfillmentText:
-        'Oops, something went wrong while fetching information. Please try again later!',
+      fulfillmentText: 'Oops, something went wrong while fetching information. Please try again later!',
     });
   }
 });
