@@ -131,18 +131,9 @@ async function handleArtificialAttractions() {
 }
 
 function handleGreeting() {
-  return `Hello! 👋 I'm your travel assistant! 🌟
+  return `Hello! 👋 I'm your assistant! 🌟
 
-I can help you discover amazing attractions:
-
-🌟 **All attractions** - "Show me all attractions"
-🌿 **Natural attractions** - "Natural places to visit"
-🏛️ **Historical attractions** - "Historical sites please"
-🎨 **Cultural attractions** - "Cultural venues"
-🏗️ **Artificial attractions** - "Modern attractions"
-
-❓ **Need help?** - Just say "help"
-
+I can help you discover Draa Tafilalet.
 What would you like to explore today? 🚀`;
 }
 
