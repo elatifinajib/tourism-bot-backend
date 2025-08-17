@@ -7,6 +7,12 @@ const app = express();
 // body-parser n'est plus nécessaire depuis Express 4.16+
 app.use(express.json());
 
+// ---------------------- Message d'accueil par défaut ----------------------
+const WELCOME_TEXT =
+  '👋 Bonjour ! Je suis votre assistant de voyage 🤖. ' +
+  'Je peux vous aider à découvrir des attractions par ville, type ou nom. ' +
+  'Dites-moi par exemple : "Attractions à Marrakech" ou "Sites historiques à Fès".';
+
 // ---------------------- Config API ----------------------
 const BASE_URL = 'https://touristeproject.onrender.com/api/public';
 const api = axios.create({
@@ -319,7 +325,7 @@ async function handleIntent(intentName, parameters) {
   try {
     const { data } = await api.get(url);
     const arr = Array.isArray(data) ? data : [data];
-    if (!arr?.length) return config.empty;
+    if (!arr?.length) return intentConfig[intentName].empty;
     return buildReply({ intro, icon, items: arr, formatter });
   } catch (e) {
     console.error('Fetch error:', e?.message);
@@ -332,11 +338,23 @@ app.post('/webhook', async (req, res) => {
   try {
     const intentName = req.body?.queryResult?.intent?.displayName;
     const parameters = req.body?.queryResult?.parameters;
+    const action = req.body?.queryResult?.action;
+    const queryText = req.body?.queryResult?.queryText;
 
-    if (!intentName) {
-      return res.json({ fulfillmentText: "Sorry, I didn't understand your request." });
+    // 1) Cas "premier message" ou action welcome (Dialogflow ES déclenche input.welcome)
+    const looksLikeWelcome =
+      action === 'input.welcome' ||
+      !intentName ||
+      (typeof queryText === 'string' && queryText.trim() === '');
+
+    if (looksLikeWelcome) {
+      return res.json({
+        fulfillmentText: WELCOME_TEXT,
+        fulfillmentMessages: [{ text: { text: [WELCOME_TEXT] } }],
+      });
     }
 
+    // 2) Reste des intents gérés normalement
     const reply = await handleIntent(intentName, parameters);
 
     if (!reply) {
