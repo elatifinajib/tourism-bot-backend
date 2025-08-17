@@ -9,9 +9,9 @@ app.use(express.json());
 
 // ---------------------- Message d'accueil par défaut ----------------------
 const WELCOME_TEXT =
-  '👋 Hello! I’m your assistant bot 🤖. ' +
-  'I can help you discover Draa Tafilalet. ' +
-  'What would you like to explore today?';
+  '👋 Bonjour ! Je suis votre assistant de voyage 🤖. ' +
+  'Je peux vous aider à découvrir des attractions par ville, type ou nom. ' +
+  'Dites-moi par exemple : "Attractions à Marrakech" ou "Sites historiques à Fès".';
 
 // ---------------------- Config API ----------------------
 const BASE_URL = 'https://touristeproject.onrender.com/api/public';
