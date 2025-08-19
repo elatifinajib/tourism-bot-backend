@@ -1,21 +1,32 @@
 {
-  "name": "tourism-bot-backend",
+  "name": "tourism-chatbot-backend",
   "version": "1.0.0",
-  "description": "Webhook for Dialogflow",
+  "description": "Backend for tourism chatbot with Dialogflow integration",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
-    "@google-cloud/dialogflow": "^7.2.0",
-    "axios": "^1.11.0",
-    "axios-retry": "^4.5.0",
-    "body-parser": "^1.20.2",
+    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "express-rate-limit": "^8.0.1",
-    "helmet": "^8.1.0",
-    "morgan": "^1.10.1",
-    "uuid": "^11.1.0"
-  }
+    "body-parser": "^1.20.2",
+    "axios": "^1.6.0",
+    "@google-cloud/dialogflow": "^6.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "dialogflow",
+    "chatbot",
+    "tourism",
+    "nodejs",
+    "express"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
 }
