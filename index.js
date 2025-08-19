@@ -1,5 +1,4 @@
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const axios = require('axios');
 
@@ -8,16 +7,16 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// URL de ton API d'attractions déployée sur Render
-const ATTRACTIONS_API_URL = 'https://ton-app-render.onrender.com/api/public/getAll/Attraction';
+// API Base URL
+const API_BASE_URL = 'https://touristeproject.onrender.com';
 
-// Health check endpoint
+// Health check
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Tourism Chatbot Backend is running!',
+  res.json({
+    message: '🚀 Tourism Bot Backend is running!',
     timestamp: new Date().toISOString(),
     endpoints: {
       webhook: '/webhook',
@@ -27,20 +26,20 @@ app.get('/', (req, res) => {
   });
 });
 
-// Test endpoint pour vérifier la connexion aux attractions
+// Test endpoint
 app.get('/test', async (req, res) => {
   try {
-    const response = await axios.get(ATTRACTIONS_API_URL, {
+    const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
       timeout: 10000
     });
     res.json({
-      message: 'Connection to attractions API successful',
+      message: '✅ Connection to Tourism API successful',
       attractionsCount: response.data.length,
       sampleAttraction: response.data[0] || null
     });
   } catch (error) {
     res.status(500).json({
-      message: 'Failed to connect to attractions API',
+      message: '❌ Failed to connect to Tourism API',
       error: error.message
     });
   }
@@ -49,144 +48,316 @@ app.get('/test', async (req, res) => {
 // Webhook principal pour Dialogflow
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Webhook appelé:', JSON.stringify(req.body, null, 2));
+    console.log('🎯 Webhook called:', JSON.stringify(req.body, null, 2));
 
     const intentName = req.body.queryResult?.intent?.displayName;
     const queryText = req.body.queryResult?.queryText;
     const sessionId = req.body.session;
 
-    console.log(`Intent détecté: ${intentName}`);
-    console.log(`Message utilisateur: ${queryText}`);
+    console.log(`🔍 Intent detected: ${intentName}`);
+    console.log(`💬 User message: ${queryText}`);
 
     let response = {};
 
     switch (intentName) {
       case 'Ask_All_Attractions':
-        response = await handleAllAttractionsRequest();
+        response = await handleAllAttractions();
+        break;
+      
+      case 'Ask_Natural_Attractions':
+        response = await handleNaturalAttractions();
+        break;
+      
+      case 'Ask_Cultural_Attractions':
+        response = await handleCulturalAttractions();
+        break;
+      
+      case 'Ask_Historical_Attractions':
+        response = await handleHistoricalAttractions();
+        break;
+      
+      case 'Ask_Artificial_Attractions':
+        response = await handleArtificialAttractions();
         break;
       
       case 'Default Welcome Intent':
         response = {
-          fulfillmentText: "Bonjour ! Je suis votre assistant touristique pour la région Draa-Tafilalet. Comment puis-je vous aider aujourd'hui ?"
+          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, or artificial attractions."
         };
         break;
       
       default:
         response = {
-          fulfillmentText: "Je n'ai pas bien compris votre demande. Pouvez-vous me dire ce que vous cherchez ?"
+          fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', or 'artificial attractions'."
         };
     }
 
-    console.log('Réponse envoyée:', JSON.stringify(response, null, 2));
+    console.log('📤 Response sent:', JSON.stringify(response, null, 2));
     res.json(response);
 
   } catch (error) {
-    console.error('Erreur dans le webhook:', error);
+    console.error('❌ Webhook error:', error);
     res.status(500).json({
-      fulfillmentText: "Désolé, je rencontre un problème technique. Veuillez réessayer dans quelques instants."
+      fulfillmentText: "Sorry, I'm experiencing technical difficulties. Please try again in a moment."
     });
   }
 });
 
-// Fonction pour gérer la demande de toutes les attractions
-async function handleAllAttractionsRequest() {
+// Handler functions
+async function handleAllAttractions() {
   try {
-    console.log('Récupération des attractions...');
+    console.log('🏛️ Fetching all attractions...');
     
-    // Appel à ton API d'attractions
-    const response = await axios.get(ATTRACTIONS_API_URL, {
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-      }
+    const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
     });
 
     const attractions = response.data;
-    console.log(`${attractions.length} attractions récupérées`);
+    console.log(`✅ ${attractions.length} attractions fetched`);
 
     if (!attractions || attractions.length === 0) {
       return {
-        fulfillmentText: "Aucune attraction n'est disponible pour le moment. Veuillez réessayer plus tard."
+        fulfillmentText: "No attractions are currently available. Please try again later."
       };
     }
 
-    // Formatage pour Flutter
     return {
-      fulfillmentText: `J'ai trouvé ${attractions.length} attractions magnifiques pour vous !`,
+      fulfillmentText: `I found ${attractions.length} amazing attractions in Draa-Tafilalet for you!`,
       
-      // Payload spécial pour Flutter
       payload: {
         flutter: {
           type: 'attractions_list',
+          category: 'all',
           data: {
             attractions: attractions,
             count: attractions.length,
-            message: `Découvrez ${attractions.length} attractions incontournables`
+            title: 'All Attractions in Draa-Tafilalet',
+            subtitle: `Discover ${attractions.length} incredible places to visit`
           },
           actions: [
-            {
-              type: 'view_details',
-              label: 'Voir détails',
-              icon: 'info'
-            },
-            {
-              type: 'get_directions',
-              label: 'Itinéraire',
-              icon: 'directions'
-            },
-            {
-              type: 'favorite',
-              label: 'Favoris',
-              icon: 'favorite'
-            }
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
           ]
         }
-      },
-
-      // Réponses riches pour Dialogflow (optionnel)
-      fulfillmentMessages: [
-        {
-          platform: "ACTIONS_ON_GOOGLE",
-          carouselSelect: {
-            items: attractions.slice(0, 10).map(attraction => ({
-              info: {
-                key: attraction.id_Location?.toString() || Math.random().toString(),
-                title: attraction.name || 'Attraction sans nom',
-                description: `${attraction.cityName || 'Ville inconnue'}, ${attraction.countryName || 'Pays inconnu'} - ${attraction.entryFre || 0}€`,
-                image: {
-                  url: (attraction.imageUrls && attraction.imageUrls.length > 0) 
-                    ? attraction.imageUrls[0] 
-                    : "https://via.placeholder.com/300x200?text=No+Image"
-                }
-              }
-            }))
-          }
-        }
-      ]
+      }
     };
 
   } catch (error) {
-    console.error('Erreur lors de la récupération des attractions:', error.message);
-    
+    console.error('❌ Error fetching all attractions:', error.message);
     return {
-      fulfillmentText: "Désolé, je n'arrive pas à récupérer les attractions en ce moment. Le service pourrait être temporairement indisponible. Veuillez réessayer dans quelques minutes."
+      fulfillmentText: "Sorry, I couldn't retrieve the attractions right now. The service might be temporarily unavailable. Please try again in a few minutes."
     };
   }
 }
 
-// Gestion des erreurs globales
+async function handleNaturalAttractions() {
+  try {
+    console.log('🌿 Fetching natural attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/NaturalAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const attractions = response.data;
+    console.log(`✅ ${attractions.length} natural attractions fetched`);
+
+    if (!attractions || attractions.length === 0) {
+      return {
+        fulfillmentText: "No natural attractions are currently available."
+      };
+    }
+
+    return {
+      fulfillmentText: `I found ${attractions.length} beautiful natural attractions in Draa-Tafilalet!`,
+      
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: 'natural',
+          data: {
+            attractions: attractions,
+            count: attractions.length,
+            title: 'Natural Attractions',
+            subtitle: `Explore ${attractions.length} stunning natural wonders`
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error fetching natural attractions:', error.message);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve natural attractions right now. Please try again later."
+    };
+  }
+}
+
+async function handleCulturalAttractions() {
+  try {
+    console.log('🎭 Fetching cultural attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/CulturalAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const attractions = response.data;
+    console.log(`✅ ${attractions.length} cultural attractions fetched`);
+
+    if (!attractions || attractions.length === 0) {
+      return {
+        fulfillmentText: "No cultural attractions are currently available."
+      };
+    }
+
+    return {
+      fulfillmentText: `I found ${attractions.length} fascinating cultural attractions in Draa-Tafilalet!`,
+      
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: 'cultural',
+          data: {
+            attractions: attractions,
+            count: attractions.length,
+            title: 'Cultural Attractions',
+            subtitle: `Discover ${attractions.length} rich cultural heritage sites`
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error fetching cultural attractions:', error.message);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve cultural attractions right now. Please try again later."
+    };
+  }
+}
+
+async function handleHistoricalAttractions() {
+  try {
+    console.log('🏛️ Fetching historical attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/HistoricalAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const attractions = response.data;
+    console.log(`✅ ${attractions.length} historical attractions fetched`);
+
+    if (!attractions || attractions.length === 0) {
+      return {
+        fulfillmentText: "No historical attractions are currently available."
+      };
+    }
+
+    return {
+      fulfillmentText: `I found ${attractions.length} remarkable historical attractions in Draa-Tafilalet!`,
+      
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: 'historical',
+          data: {
+            attractions: attractions,
+            count: attractions.length,
+            title: 'Historical Attractions',
+            subtitle: `Explore ${attractions.length} sites rich in history`
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error fetching historical attractions:', error.message);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve historical attractions right now. Please try again later."
+    };
+  }
+}
+
+async function handleArtificialAttractions() {
+  try {
+    console.log('🏗️ Fetching artificial attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/ArtificialAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const attractions = response.data;
+    console.log(`✅ ${attractions.length} artificial attractions fetched`);
+
+    if (!attractions || attractions.length === 0) {
+      return {
+        fulfillmentText: "No artificial attractions are currently available."
+      };
+    }
+
+    return {
+      fulfillmentText: `I found ${attractions.length} impressive artificial attractions in Draa-Tafilalet!`,
+      
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: 'artificial',
+          data: {
+            attractions: attractions,
+            count: attractions.length,
+            title: 'Artificial Attractions',
+            subtitle: `Visit ${attractions.length} remarkable man-made wonders`
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Error fetching artificial attractions:', error.message);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve artificial attractions right now. Please try again later."
+    };
+  }
+}
+
+// Global error handler
 app.use((error, req, res, next) => {
-  console.error('Erreur globale:', error);
+  console.error('❌ Global error:', error);
   res.status(500).json({
-    fulfillmentText: "Une erreur inattendue s'est produite."
+    fulfillmentText: "An unexpected error occurred."
   });
 });
 
-// Démarrage du serveur
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+  console.log(`🚀 Tourism Bot Backend started on port ${PORT}`);
   console.log(`📱 Webhook URL: https://tourism-bot-backend-production.up.railway.app/webhook`);
-  console.log(`🏛️ API Attractions: ${ATTRACTIONS_API_URL}`);
+  console.log(`🏛️ Tourism API: ${API_BASE_URL}`);
+  console.log('✅ Ready to handle Dialogflow requests!');
 });
 
 module.exports = app;
