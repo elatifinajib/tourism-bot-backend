@@ -9,7 +9,7 @@ app.use(express.json());
 
 // ---------------------- Message d'accueil par défaut ----------------------
 const WELCOME_TEXT =
-  '👋 Hello! I m your assistant bot 🤖. ' +
+  '👋 Hello! I'm your assistant bot 🤖. ' +
   'I can help you discover Draa Tafilalet. ' +
   ' What would you like to explore today?';
 
@@ -340,14 +340,17 @@ app.post('/api/chat', async (req, res) => {
     
     console.log('📱 Flutter request:', { message, userId, sessionId });
 
-    // Détecter l'intent depuis le message (logique simple)
-    const detectedIntent = detectIntentFromMessage(message);
-    const parameters = extractParametersFromMessage(message);
+    // Détecter l'intent avec la logique améliorée
+    const detectedIntent = await detectIntentWithDialogflow(message);
+    const parameters = await extractParametersWithDialogflow(message);
     
     console.log('🎯 Detected intent:', detectedIntent);
+    console.log('📝 Parameters:', parameters);
 
-    // Récupérer les données
-    const data = await handleIntent(detectedIntent, parameters);
+    // Utiliser la fonction spéciale qui retourne des données brutes
+    const data = await handleIntentForRichResponse(detectedIntent, parameters);
+    
+    console.log('📊 Data received:', typeof data, Array.isArray(data) ? `Array[${data.length}]` : data);
     
     if (!data) {
       return res.json({
@@ -374,65 +377,206 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Fonction pour détecter l'intent depuis le message
-function detectIntentFromMessage(message) {
+// Fonction améliorée pour détecter l'intent (plus proche de Dialogflow)
+async function detectIntentWithDialogflow(message) {
   const msg = message.toLowerCase().trim();
   
-  // Attractions générales
-  if (msg.includes('attraction') && !msg.includes('natural') && !msg.includes('historical') && !msg.includes('cultural') && !msg.includes('artificial')) {
-    return 'Ask_All_Attractions';
-  }
-  
-  // Attractions par type
-  if (msg.includes('natural')) return 'Ask_Natural_Attractions';
-  if (msg.includes('historical') || msg.includes('history')) return 'Ask_Historical_Attractions';
-  if (msg.includes('cultural') || msg.includes('culture')) return 'Ask_Cultural_Attractions';
-  if (msg.includes('artificial')) return 'Ask_Artificial_Attractions';
-  
-  // Attractions par ville
-  if (msg.includes('in ') || msg.includes('at ')) {
-    if (msg.includes('natural')) return 'Ask_Natural_Attractions_ByCity';
-    if (msg.includes('historical')) return 'Ask_Historical_Attractions_ByCity';
-    if (msg.includes('cultural')) return 'Ask_Cultural_Attractions_ByCity';
-    if (msg.includes('artificial')) return 'Ask_Artificial_Attractions_ByCity';
+  // Ask_Attraction_ByCity - phrases avec ville (PRIORITÉ HAUTE)
+  if ((msg.includes('attraction') || msg.includes('place') || msg.includes('show me')) && 
+      (msg.includes(' in ') || msg.includes(' at ') || msg.includes(' from '))) {
     return 'Ask_Attraction_ByCity';
   }
   
-  // Attraction par nom spécifique
-  if (msg.includes('tell me about') || msg.includes('details') || msg.includes('information about')) {
+  // Ask_Natural_Attractions_ByCity
+  if (msg.includes('natural') && (msg.includes(' in ') || msg.includes(' at '))) {
+    return 'Ask_Natural_Attractions_ByCity';
+  }
+  
+  // Ask_Historical_Attractions_ByCity  
+  if ((msg.includes('historical') || msg.includes('history')) && 
+      (msg.includes(' in ') || msg.includes(' at '))) {
+    return 'Ask_Historical_Attractions_ByCity';
+  }
+  
+  // Ask_Cultural_Attractions_ByCity
+  if ((msg.includes('cultural') || msg.includes('culture')) && 
+      (msg.includes(' in ') || msg.includes(' at '))) {
+    return 'Ask_Cultural_Attractions_ByCity';
+  }
+  
+  // Ask_Artificial_Attractions_ByCity
+  if (msg.includes('artificial') && (msg.includes(' in ') || msg.includes(' at '))) {
+    return 'Ask_Artificial_Attractions_ByCity';
+  }
+  
+  // Ask_Attraction_ByName - phrases avec "about" ou noms spécifiques
+  if (msg.includes('tell me about') || msg.includes('details about') || 
+      msg.includes('information about') || msg.includes('what is')) {
     return 'Ask_Attraction_ByName';
   }
   
-  // Default
+  // Ask_Natural_Attractions - juste "natural" sans ville
+  if (msg.includes('natural') && !msg.includes(' in ') && !msg.includes(' at ')) {
+    return 'Ask_Natural_Attractions';
+  }
+  
+  // Ask_Historical_Attractions
+  if ((msg.includes('historical') || msg.includes('history')) && 
+      !msg.includes(' in ') && !msg.includes(' at ')) {
+    return 'Ask_Historical_Attractions';
+  }
+  
+  // Ask_Cultural_Attractions
+  if ((msg.includes('cultural') || msg.includes('culture')) && 
+      !msg.includes(' in ') && !msg.includes(' at ')) {
+    return 'Ask_Cultural_Attractions';
+  }
+  
+  // Ask_Artificial_Attractions
+  if (msg.includes('artificial') && !msg.includes(' in ') && !msg.includes(' at ')) {
+    return 'Ask_Artificial_Attractions';
+  }
+  
+  // Ask_All_Attractions - default pour "attraction", "places", "show me"
+  if (msg.includes('attraction') || msg.includes('place') || msg.includes('show me') ||
+      msg.includes('best') || msg.includes('top') || msg.includes('visit')) {
+    return 'Ask_All_Attractions';
+  }
+  
+  // Default fallback
   return 'Ask_All_Attractions';
 }
 
-// Fonction pour extraire les paramètres
-function extractParametersFromMessage(message) {
+// Fonction améliorée pour extraire les paramètres
+async function extractParametersWithDialogflow(message) {
   const parameters = {};
   const msg = message.toLowerCase();
   
-  // Extraire nom de ville après "in"
-  const cityMatch = msg.match(/in\s+([a-zA-Z\s-']+)/);
-  if (cityMatch) {
-    parameters.cityName = cityMatch[1].trim();
+  // Extraire nom de ville (patterns plus sophistiqués)
+  const cityPatterns = [
+    /(?:in|at|from)\s+([a-zA-Z\s-']+?)(?:\s|$|,|\?|!)/,
+    /attractions?\s+(?:in|at|from)\s+([a-zA-Z\s-']+?)(?:\s|$|,|\?|!)/,
+    /places?\s+(?:in|at|from)\s+([a-zA-Z\s-']+?)(?:\s|$|,|\?|!)/
+  ];
+  
+  for (const pattern of cityPatterns) {
+    const cityMatch = msg.match(pattern);
+    if (cityMatch) {
+      parameters.cityName = cityMatch[1].trim();
+      break;
+    }
   }
   
-  // Extraire nom d'attraction après "about"
-  const nameMatch = msg.match(/about\s+([a-zA-Z\s-']+)/);
-  if (nameMatch) {
-    parameters.name = nameMatch[1].trim();
+  // Extraire nom d'attraction
+  const namePatterns = [
+    /(?:about|of)\s+([a-zA-Z\s-']+?)(?:\s|$|,|\?|!)/,
+    /(?:tell me about|details about|information about)\s+([a-zA-Z\s-']+?)(?:\s|$|,|\?|!)/,
+    /(?:what is)\s+([a-zA-Z\s-']+?)(?:\s|$|,|\?|!)/
+  ];
+  
+  for (const pattern of namePatterns) {
+    const nameMatch = msg.match(pattern);
+    if (nameMatch) {
+      parameters.name = nameMatch[1].trim();
+      break;
+    }
   }
   
   return parameters;
 }
 
-// Fonction pour formater les réponses riches
+// ---------------------- Version spéciale de handleIntent pour réponses riches ----------------------
+async function handleIntentForRichResponse(intentName, parameters) {
+  const config = intentConfig[intentName];
+  if (!config) return null;
+
+  let { url, cityFiltered } = config;
+
+  // ---- ByName ----
+  if (intentName === 'Ask_Attraction_ByName') {
+    const name = (parameters?.name || '').toString().trim();
+    if (!name) return 'Please tell me the name of the attraction.';
+    const fullUrl = `${url}/${encodeURIComponent(name)}`;
+
+    try {
+      const { data } = await api.get(fullUrl);
+      const arr = Array.isArray(data) ? data : [data];
+      return arr?.length ? arr : null;
+    } catch (e) {
+      console.error('Fetch error:', e?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
+  }
+
+  // ---- Types PAR VILLE (filtrage local) ----
+  if (cityFiltered) {
+    const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
+    if (!rawCity) return 'Please tell me the city name.';
+
+    try {
+      const { data } = await api.get(url);
+      const arr = Array.isArray(data) ? data : [data];
+      const byCity = arr.filter((it) => cityEquals(it?.cityName || '', rawCity));
+      return byCity?.length ? byCity : null;
+    } catch (e) {
+      console.error('Fetch error:', e?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
+  }
+
+  // ---- ByCity "général" ----
+  if (intentName === 'Ask_Attraction_ByCity') {
+    const rawCity = (parameters?.cityName || parameters?.name || '').toString().trim();
+    if (!rawCity) return 'Please tell me the city name.';
+
+    try {
+      let items = await fetchByCityWithVariants(rawCity);
+      if (!items || items.length === 0) {
+        items = await fetchByCityFallbackScanning(rawCity);
+      }
+      const onlyAttractions = (items || []).filter(isAttraction);
+      return onlyAttractions?.length ? onlyAttractions : null;
+    } catch (e) {
+      console.error('Fetch error:', e?.message);
+      return 'Oops, something went wrong while fetching information. Please try again later!';
+    }
+  }
+
+  // ---- Intents simples ----
+  try {
+    const { data } = await api.get(url);
+    const arr = Array.isArray(data) ? data : [data];
+    return arr?.length ? arr : null;
+  } catch (e) {
+    console.error('Fetch error:', e?.message);
+    return 'Oops, something went wrong while fetching information. Please try again later!';
+  }
+}
+
+// Fonction pour formater les réponses riches (CORRIGÉE)
 function formatRichResponse(intent, data, parameters) {
   const config = intentConfig[intent];
   
-  // Si c'est une string (ancienne logique), on retourne format simple
+  console.log('🎨 Formatting response for intent:', intent);
+  console.log('📊 Data type:', typeof data);
+  console.log('📊 Data length:', Array.isArray(data) ? data.length : 'not array');
+  
+  // Si c'est une string (réponse textuelle de handleIntent), on vérifie s'il faut la convertir
   if (typeof data === 'string') {
+    // Si c'est une réponse d'erreur ou vide, retourner texte simple
+    if (data.includes("Sorry") || data.includes("couldn't find") || data.includes("Oops")) {
+      return {
+        message: data,
+        intent: intent,
+        type: 'text',
+        data: null,
+        components: null,
+        isError: false
+      };
+    }
+    
+    // Si c'est une réponse formatée avec buildReply, essayer de récupérer les vraies données
+    console.log('⚠️ Got string response, trying to fetch raw data...');
     return {
       message: data,
       intent: intent,
@@ -443,32 +587,37 @@ function formatRichResponse(intent, data, parameters) {
     };
   }
   
-  // Si c'est un array (données d'attractions), on format en riche
+  // Si c'est un array (données brutes d'attractions), on format en riche
   if (Array.isArray(data) && data.length > 0) {
     const responseType = getResponseType(intent);
+    console.log('✅ Creating rich response with', data.length, 'items');
     
     return {
-      message: `Found ${data.length} ${responseType} for you!`,
+      message: `Found ${data.length} ${responseType.replace('_', ' ')} for you!`,
       intent: intent,
       type: responseType,
       data: data,
       components: {
         type: 'carousel',
         items: data.map(item => ({
-          id: item.id,
-          title: item.name,
+          id: item.id || Math.random().toString(),
+          title: item.name || 'Unknown',
           subtitle: item.cityName || '',
           description: item.description || '',
           image: Array.isArray(item.imageUrls) && item.imageUrls.length > 0 ? item.imageUrls[0] : null,
           rating: item.rating || null,
-          entryFee: item.entryFre || null,
+          entryFee: item.entryFre !== undefined ? item.entryFre : null,
           coordinates: item.latitude && item.longitude ? {
             lat: item.latitude,
             lng: item.longitude
           } : null,
           buttons: [
-            { text: 'View Details', action: 'view_details', data: item.id },
-            ...(item.latitude && item.longitude ? [{ text: 'Get Directions', action: 'directions', data: { lat: item.latitude, lng: item.longitude }}] : [])
+            { text: 'View Details', action: 'view_details', data: item.id || item.name },
+            ...(item.latitude && item.longitude ? [{ 
+              text: 'Get Directions', 
+              action: 'directions', 
+              data: { lat: item.latitude, lng: item.longitude }
+            }] : [])
           ]
         }))
       },
@@ -476,7 +625,8 @@ function formatRichResponse(intent, data, parameters) {
     };
   }
   
-  // Pas de données
+  // Pas de données ou données vides
+  console.log('❌ No valid data found');
   return {
     message: config?.empty || "Sorry, I couldn't find anything for you.",
     intent: intent,
