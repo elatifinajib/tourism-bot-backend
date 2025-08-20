@@ -411,9 +411,7 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
             count: firstPageAttractions.length,
             hasMore: true,
             totalCount: totalCount,
-            remainingCount: remainingCount,
-            // Signal pour Flutter d'envoyer automatiquement le message "voir plus"
-            sendMoreMessage: true
+            remainingCount: remainingCount
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -442,4 +440,4 @@ app.listen(PORT, () => {
   console.log('✅ Ready to handle Dialogflow requests with pagination!');
 });
 
-module.exports = app;
+module.exports = app; 
