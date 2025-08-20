@@ -103,7 +103,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Handler functions
+// Handler functions with improved natural responses
 async function handleAllAttractions() {
   try {
     console.log('🏛️ Fetching all attractions...');
@@ -118,12 +118,15 @@ async function handleAllAttractions() {
 
     if (!attractions || attractions.length === 0) {
       return {
-        fulfillmentText: "No attractions are currently available. Please try again later."
+        fulfillmentText: "I'm sorry, but I couldn't find any attractions at the moment. Please try again later."
       };
     }
 
+    // Réponse naturelle unifiée
+    const naturalResponse = `I've found ${attractions.length} incredible attractions in the Draa-Tafilalet region! Here are some amazing places you can explore:`;
+
     return {
-      fulfillmentText: `I found ${attractions.length} amazing attractions in Draa-Tafilalet for you!`,
+      fulfillmentText: naturalResponse,
       
       payload: {
         flutter: {
@@ -132,8 +135,7 @@ async function handleAllAttractions() {
           data: {
             attractions: attractions,
             count: attractions.length,
-            title: 'All Attractions in Draa-Tafilalet',
-            subtitle: `Discover ${attractions.length} incredible places to visit`
+            // Suppression du title et subtitle pour éviter la duplication
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -147,7 +149,7 @@ async function handleAllAttractions() {
   } catch (error) {
     console.error('❌ Error fetching all attractions:', error.message);
     return {
-      fulfillmentText: "Sorry, I couldn't retrieve the attractions right now. The service might be temporarily unavailable. Please try again in a few minutes."
+      fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
     };
   }
 }
@@ -166,12 +168,14 @@ async function handleNaturalAttractions() {
 
     if (!attractions || attractions.length === 0) {
       return {
-        fulfillmentText: "No natural attractions are currently available."
+        fulfillmentText: "I couldn't find any natural attractions right now. Please try again later."
       };
     }
 
+    const naturalResponse = `Here are ${attractions.length} stunning natural attractions in Draa-Tafilalet! From breathtaking landscapes to protected natural areas:`;
+
     return {
-      fulfillmentText: `I found ${attractions.length} beautiful natural attractions in Draa-Tafilalet!`,
+      fulfillmentText: naturalResponse,
       
       payload: {
         flutter: {
@@ -180,8 +184,6 @@ async function handleNaturalAttractions() {
           data: {
             attractions: attractions,
             count: attractions.length,
-            title: 'Natural Attractions',
-            subtitle: `Explore ${attractions.length} stunning natural wonders`
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -195,7 +197,7 @@ async function handleNaturalAttractions() {
   } catch (error) {
     console.error('❌ Error fetching natural attractions:', error.message);
     return {
-      fulfillmentText: "Sorry, I couldn't retrieve natural attractions right now. Please try again later."
+      fulfillmentText: "I'm having trouble finding natural attractions at the moment. Please try again later."
     };
   }
 }
@@ -218,8 +220,10 @@ async function handleCulturalAttractions() {
       };
     }
 
+    const naturalResponse = `Discover the rich cultural heritage of Draa-Tafilalet! I've found ${attractions.length} fascinating cultural sites that showcase our region's traditions and history:`;
+
     return {
-      fulfillmentText: `I found ${attractions.length} fascinating cultural attractions in Draa-Tafilalet!`,
+      fulfillmentText: naturalResponse,
       
       payload: {
         flutter: {
@@ -228,8 +232,6 @@ async function handleCulturalAttractions() {
           data: {
             attractions: attractions,
             count: attractions.length,
-            title: 'Cultural Attractions',
-            subtitle: `Discover ${attractions.length} rich cultural heritage sites`
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -243,7 +245,7 @@ async function handleCulturalAttractions() {
   } catch (error) {
     console.error('❌ Error fetching cultural attractions:', error.message);
     return {
-      fulfillmentText: "Sorry, I couldn't retrieve cultural attractions right now. Please try again later."
+      fulfillmentText: "I'm currently unable to retrieve cultural attractions. Please try again shortly."
     };
   }
 }
@@ -266,8 +268,10 @@ async function handleHistoricalAttractions() {
       };
     }
 
+    const naturalResponse = `Step back in time! Here are ${attractions.length} remarkable historical sites in Draa-Tafilalet where you can explore centuries of fascinating history:`;
+
     return {
-      fulfillmentText: `I found ${attractions.length} remarkable historical attractions in Draa-Tafilalet!`,
+      fulfillmentText: naturalResponse,
       
       payload: {
         flutter: {
@@ -276,8 +280,6 @@ async function handleHistoricalAttractions() {
           data: {
             attractions: attractions,
             count: attractions.length,
-            title: 'Historical Attractions',
-            subtitle: `Explore ${attractions.length} sites rich in history`
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -291,7 +293,7 @@ async function handleHistoricalAttractions() {
   } catch (error) {
     console.error('❌ Error fetching historical attractions:', error.message);
     return {
-      fulfillmentText: "Sorry, I couldn't retrieve historical attractions right now. Please try again later."
+      fulfillmentText: "I'm having difficulty accessing historical attractions right now. Please try again later."
     };
   }
 }
@@ -314,8 +316,10 @@ async function handleArtificialAttractions() {
       };
     }
 
+    const naturalResponse = `Explore modern marvels and architectural wonders! I've found ${attractions.length} impressive artificial attractions in Draa-Tafilalet:`;
+
     return {
-      fulfillmentText: `I found ${attractions.length} impressive artificial attractions in Draa-Tafilalet!`,
+      fulfillmentText: naturalResponse,
       
       payload: {
         flutter: {
@@ -324,11 +328,9 @@ async function handleArtificialAttractions() {
           data: {
             attractions: attractions,
             count: attractions.length,
-            title: 'Artificial Attractions',
-            subtitle: `Visit ${attractions.length} remarkable man-made wonders`
           },
           actions: [
-            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'view_details', label: 'View_details', icon: 'info' },
             { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
             { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
           ]
@@ -339,7 +341,7 @@ async function handleArtificialAttractions() {
   } catch (error) {
     console.error('❌ Error fetching artificial attractions:', error.message);
     return {
-      fulfillmentText: "Sorry, I couldn't retrieve artificial attractions right now. Please try again later."
+      fulfillmentText: "I'm currently unable to access artificial attractions. Please try again shortly."
     };
   }
 }
