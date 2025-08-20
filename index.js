@@ -122,8 +122,8 @@ async function handleAllAttractions() {
       };
     }
 
-    // Réponse naturelle unifiée
-    const naturalResponse = `I've found ${attractions.length} incredible attractions in the Draa-Tafilalet region! Here are some amazing places you can explore:`;
+    // Réponse naturelle unifiée avec description
+    const naturalResponse = `I found ${attractions.length} amazing attractions in Draa-Tafilalet for you!\n\nHere are some incredible places you can explore:`;
 
     return {
       fulfillmentText: naturalResponse,
@@ -172,7 +172,7 @@ async function handleNaturalAttractions() {
       };
     }
 
-    const naturalResponse = `Here are ${attractions.length} stunning natural attractions in Draa-Tafilalet! From breathtaking landscapes to protected natural areas:`;
+    const naturalResponse = `I found ${attractions.length} beautiful natural attractions in Draa-Tafilalet!\n\nHere are stunning landscapes and natural areas you can discover:`;
 
     return {
       fulfillmentText: naturalResponse,
@@ -220,7 +220,7 @@ async function handleCulturalAttractions() {
       };
     }
 
-    const naturalResponse = `Discover the rich cultural heritage of Draa-Tafilalet! I've found ${attractions.length} fascinating cultural sites that showcase our region's traditions and history:`;
+    const naturalResponse = `I found ${attractions.length} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are amazing cultural sites that showcase our rich heritage and traditions:`;
 
     return {
       fulfillmentText: naturalResponse,
@@ -268,7 +268,7 @@ async function handleHistoricalAttractions() {
       };
     }
 
-    const naturalResponse = `Step back in time! Here are ${attractions.length} remarkable historical sites in Draa-Tafilalet where you can explore centuries of fascinating history:`;
+    const naturalResponse = `I found ${attractions.length} remarkable historical attractions in Draa-Tafilalet!\n\nHere are incredible historical sites where you can explore centuries of fascinating history:`;
 
     return {
       fulfillmentText: naturalResponse,
@@ -316,7 +316,7 @@ async function handleArtificialAttractions() {
       };
     }
 
-    const naturalResponse = `Explore modern marvels and architectural wonders! I've found ${attractions.length} impressive artificial attractions in Draa-Tafilalet:`;
+    const naturalResponse = `I found ${attractions.length} impressive artificial attractions in Draa-Tafilalet!\n\nHere are amazing modern marvels and architectural wonders you can visit:`;
 
     return {
       fulfillmentText: naturalResponse,
