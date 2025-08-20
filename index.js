@@ -29,7 +29,49 @@ app.get('/', (req, res) => {
   });
 });
 
-// Test endpoint
+// Nouvelle route pour envoyer le message "voir plus" après l'affichage du carousel
+app.post('/send-more-question', async (req, res) => {
+  try {
+    const { sessionId, remainingCount, category } = req.body;
+    
+    console.log(`📤 Sending more question for session: ${sessionId}`);
+    
+    const categoryMessages = {
+      'all': `Would you like to see the remaining ${remainingCount} attractions?`,
+      'natural': `Want to explore ${remainingCount} more natural wonders?`,
+      'cultural': `Interested in seeing ${remainingCount} more cultural treasures?`,
+      'historical': `Want to discover ${remainingCount} more historical gems?`,
+      'artificial': `Ready to see ${remainingCount} more architectural wonders?`
+    };
+
+    const response = {
+      fulfillmentText: categoryMessages[category] || categoryMessages['all'],
+      
+      payload: {
+        flutter: {
+          type: 'yes_no_buttons',
+          data: {
+            message: categoryMessages[category] || categoryMessages['all'],
+            remainingCount: remainingCount,
+            category: category
+          },
+          actions: [
+            { type: 'show_more', label: 'Yes, show more', icon: 'visibility' },
+            { type: 'no_thanks', label: 'No, thanks', icon: 'close' }
+          ]
+        }
+      }
+    };
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ Error sending more question:', error);
+    res.status(500).json({
+      fulfillmentText: "Sorry, I'm experiencing technical difficulties."
+    });
+  }
+});
 app.get('/test', async (req, res) => {
   try {
     const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
@@ -387,15 +429,16 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
       remainingAttractions,
       category,
       categoryDisplayName,
-      waitingForMoreResponse: true // Nouveau flag pour indiquer qu'on attend une réponse
+      waitingForMoreResponse: true
     });
 
+    // Messages simplifiés pour le premier affichage (sans question)
     const messagesByCategory = {
-      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet for you!\n\nHere are the first ${ITEMS_PER_PAGE} incredible places you can explore:\n\n🔸 Would you like to see the remaining ${remainingCount} attractions? Just say "yes" or "show more"!`,
-      'natural': `I found ${totalCount} beautiful natural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} stunning landscapes you can discover:\n\n🌿 Want to explore ${remainingCount} more natural wonders? Just say "yes" or "more"!`,
-      'cultural': `I found ${totalCount} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing cultural sites:\n\n🎭 Interested in seeing ${remainingCount} more cultural treasures? Just say "yes" or "show more"!`,
-      'historical': `I found ${totalCount} remarkable historical attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} incredible historical sites:\n\n🏛️ Want to discover ${remainingCount} more historical gems? Just say "yes" or "more"!`,
-      'artificial': `I found ${totalCount} impressive artificial attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing modern marvels:\n\n🏗️ Ready to see ${remainingCount} more architectural wonders? Just say "yes" or "show more"!`
+      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet for you!\n\nHere are the first ${ITEMS_PER_PAGE} incredible places you can explore:`,
+      'natural': `I found ${totalCount} beautiful natural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} stunning landscapes you can discover:`,
+      'cultural': `I found ${totalCount} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing cultural sites:`,
+      'historical': `I found ${totalCount} remarkable historical attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} incredible historical sites:`,
+      'artificial': `I found ${totalCount} impressive artificial attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing modern marvels:`
     };
 
     return {
@@ -403,14 +446,16 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
       
       payload: {
         flutter: {
-          type: 'attractions_list',
+          type: 'attractions_list_with_more',
           category: category,
           data: {
             attractions: firstPageAttractions,
             count: firstPageAttractions.length,
             hasMore: true,
             totalCount: totalCount,
-            remainingCount: remainingCount
+            remainingCount: remainingCount,
+            // Signal pour Flutter d'envoyer automatiquement le message "voir plus"
+            sendMoreMessage: true
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
