@@ -52,12 +52,10 @@ app.post('/webhook', async (req, res) => {
 
     const intentName = req.body.queryResult?.intent?.displayName;
     const queryText = req.body.queryResult?.queryText;
-    const parameters = req.body.queryResult?.parameters;
     const sessionId = req.body.session;
 
     console.log(`🔍 Intent detected: ${intentName}`);
     console.log(`💬 User message: ${queryText}`);
-    console.log(`📋 Parameters:`, parameters);
 
     let response = {};
 
@@ -82,19 +80,15 @@ app.post('/webhook', async (req, res) => {
         response = await handleArtificialAttractions();
         break;
       
-      case 'Ask_Location_By_Name':
-        response = await handleLocationByName(parameters);
-        break;
-      
       case 'Default Welcome Intent':
         response = {
-          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about specific attractions by name or browse by category."
+          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, or artificial attractions."
         };
         break;
       
       default:
         response = {
-          fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about a specific attraction name, or browse 'all attractions', 'natural attractions', etc."
+          fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', or 'artificial attractions'."
         };
     }
 
@@ -347,89 +341,6 @@ async function handleArtificialAttractions() {
     return {
       fulfillmentText: "Sorry, I couldn't retrieve artificial attractions right now. Please try again later."
     };
-  }
-}
-
-async function handleLocationByName(parameters) {
-  try {
-    const attractionName = parameters['attraction-name'];
-    
-    if (!attractionName || attractionName.trim() === '') {
-      return {
-        fulfillmentText: "Please tell me the name of the attraction you're looking for."
-      };
-    }
-
-    console.log(`🔍 Searching for attraction: "${attractionName}"`);
-    
-    const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
-    const locationData = response.data;
-    console.log(`✅ Location found:`, locationData);
-
-    if (!locationData) {
-      return {
-        fulfillmentText: `Sorry, I couldn't find any attraction named "${attractionName}". Please check the name and try again, or ask me to show you all attractions.`
-      };
-    }
-
-    // Déterminer le type d'attraction basé sur les propriétés
-    const attractionType = determineAttractionType(locationData);
-
-    return {
-      fulfillmentText: `I found information about "${locationData.name}"! It's a ${attractionType} attraction in ${locationData.cityName}.`,
-      
-      payload: {
-        flutter: {
-          type: 'attraction_details',
-          category: attractionType,
-          data: {
-            attraction: locationData,
-            type: attractionType,
-            title: locationData.name,
-            subtitle: `${attractionType.charAt(0).toUpperCase() + attractionType.slice(1)} attraction in ${locationData.cityName}, ${locationData.countryName}`
-          },
-          actions: [
-            { type: 'view_gallery', label: 'View Gallery', icon: 'photo_library' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' },
-            { type: 'share', label: 'Share', icon: 'share' }
-          ]
-        }
-      }
-    };
-
-  } catch (error) {
-    console.error('❌ Error searching for location:', error.message);
-    
-    if (error.response?.status === 404) {
-      return {
-        fulfillmentText: `I couldn't find an attraction named "${parameters['attraction-name']}". Please check the spelling or try asking for all attractions to see what's available.`
-      };
-    }
-    
-    return {
-      fulfillmentText: "Sorry, I'm having trouble searching for that attraction right now. Please try again in a moment."
-    };
-  }
-}
-
-// Fonction helper - Détermine le type d'attraction
-function determineAttractionType(attraction) {
-  // Vérifie les propriétés spécifiques pour déterminer le type
-  if (attraction.protectedArea !== undefined) {
-    return 'natural';
-  } else if (attraction.style !== undefined && attraction.yearBuild !== undefined) {
-    return 'cultural';
-  } else if (attraction.style !== undefined) {
-    return 'historical';
-  } else if (attraction.yearBuild !== undefined) {
-    return 'artificial';
-  } else {
-    return 'general'; // Fallback
   }
 }
 
