@@ -63,45 +63,22 @@ app.post('/webhook', async (req, res) => {
 
     let response = {};
 
-    // Vérifier les intents de pagination
-    if (intentName === 'Show_More_Attractions_Yes') {
-      response = await handleShowMore(sessionId);
-    } else if (intentName === 'Show_More_Attractions_No') {
-      response = handleDecline();
-    } else {
-      // Logique normale des intents
-      switch (intentName) {
-        case 'Ask_All_Attractions':
-          response = await handleAllAttractions(sessionId);
-          break;
-        
-        case 'Ask_Natural_Attractions':
-          response = await handleNaturalAttractions(sessionId);
-          break;
-        
-        case 'Ask_Cultural_Attractions':
-          response = await handleCulturalAttractions(sessionId);
-          break;
-        
-        case 'Ask_Historical_Attractions':
-          response = await handleHistoricalAttractions(sessionId);
-          break;
-        
-        case 'Ask_Artificial_Attractions':
-          response = await handleArtificialAttractions(sessionId);
-          break;
-        
-        case 'Default Welcome Intent':
-          response = {
-            fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, or artificial attractions."
-          };
-          break;
-        
-        default:
-          response = {
-            fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', or 'artificial attractions'."
-          };
+    // Vérifier d'abord s'il y a un état de pagination en cours
+    const sessionData = getSessionData(sessionId);
+    
+    if (sessionData && sessionData.waitingForMoreResponse) {
+      // L'utilisateur est dans un état "voir plus"
+      if (isUserWantingMore(queryText)) {
+        response = await handleShowMore(sessionId);
+      } else if (isUserDeclining(queryText)) {
+        response = handleDecline(sessionId);
+      } else {
+        // L'utilisateur dit autre chose, on garde l'état mais on traite la nouvelle demande
+        response = await handleRegularIntent(intentName, sessionId);
       }
+    } else {
+      // Flux normal sans pagination en cours
+      response = await handleRegularIntent(intentName, sessionId);
     }
 
     console.log('📤 Response sent:', JSON.stringify(response, null, 2));
@@ -183,10 +160,45 @@ async function handleShowMore(sessionId) {
 }
 
 // Handler pour refus
-function handleDecline() {
+function handleDecline(sessionId) {
+  // Nettoyer la session
+  if (sessionId) {
+    sessionStorage.delete(sessionId);
+  }
+  
   return {
     fulfillmentText: "As you wish! No problem at all. I'm here anytime you need help discovering attractions in Draa-Tafilalet. Just ask me whenever you're ready! 😊"
   };
+}
+
+// Fonction pour gérer les intents réguliers
+async function handleRegularIntent(intentName, sessionId) {
+  switch (intentName) {
+    case 'Ask_All_Attractions':
+      return await handleAllAttractions(sessionId);
+    
+    case 'Ask_Natural_Attractions':
+      return await handleNaturalAttractions(sessionId);
+    
+    case 'Ask_Cultural_Attractions':
+      return await handleCulturalAttractions(sessionId);
+    
+    case 'Ask_Historical_Attractions':
+      return await handleHistoricalAttractions(sessionId);
+    
+    case 'Ask_Artificial_Attractions':
+      return await handleArtificialAttractions(sessionId);
+    
+    case 'Default Welcome Intent':
+      return {
+        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, or artificial attractions."
+      };
+    
+    default:
+      return {
+        fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', or 'artificial attractions'."
+      };
+  }
 }
 
 // Handler functions avec pagination
@@ -370,11 +382,12 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
     const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingAttractions.length;
     
-    // Sauvegarder les attractions restantes dans la session
+    // Sauvegarder les attractions restantes dans la session avec état d'attente
     saveSessionData(sessionId, {
       remainingAttractions,
       category,
-      categoryDisplayName
+      categoryDisplayName,
+      waitingForMoreResponse: true // Nouveau flag pour indiquer qu'on attend une réponse
     });
 
     const messagesByCategory = {
