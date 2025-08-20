@@ -63,10 +63,10 @@ app.post('/webhook', async (req, res) => {
 
     let response = {};
 
-    // Vérifier si l'utilisateur répond à une proposition "voir plus"
-    if (isUserWantingMore(queryText)) {
+    // Vérifier les intents de pagination
+    if (intentName === 'Show_More_Attractions_Yes') {
       response = await handleShowMore(sessionId);
-    } else if (isUserDeclining(queryText)) {
+    } else if (intentName === 'Show_More_Attractions_No') {
       response = handleDecline();
     } else {
       // Logique normale des intents
