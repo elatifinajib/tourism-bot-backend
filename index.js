@@ -29,49 +29,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Nouvelle route pour envoyer le message "voir plus" après l'affichage du carousel
-app.post('/send-more-question', async (req, res) => {
-  try {
-    const { sessionId, remainingCount, category } = req.body;
-    
-    console.log(`📤 Sending more question for session: ${sessionId}`);
-    
-    const categoryMessages = {
-      'all': `Would you like to see the remaining ${remainingCount} attractions?`,
-      'natural': `Want to explore ${remainingCount} more natural wonders?`,
-      'cultural': `Interested in seeing ${remainingCount} more cultural treasures?`,
-      'historical': `Want to discover ${remainingCount} more historical gems?`,
-      'artificial': `Ready to see ${remainingCount} more architectural wonders?`
-    };
-
-    const response = {
-      fulfillmentText: categoryMessages[category] || categoryMessages['all'],
-      
-      payload: {
-        flutter: {
-          type: 'yes_no_buttons',
-          data: {
-            message: categoryMessages[category] || categoryMessages['all'],
-            remainingCount: remainingCount,
-            category: category
-          },
-          actions: [
-            { type: 'show_more', label: 'Yes, show more', icon: 'visibility' },
-            { type: 'no_thanks', label: 'No, thanks', icon: 'close' }
-          ]
-        }
-      }
-    };
-    
-    res.json(response);
-    
-  } catch (error) {
-    console.error('❌ Error sending more question:', error);
-    res.status(500).json({
-      fulfillmentText: "Sorry, I'm experiencing technical difficulties."
-    });
-  }
-});
+// Test endpoint
 app.get('/test', async (req, res) => {
   try {
     const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
@@ -115,7 +73,7 @@ app.post('/webhook', async (req, res) => {
       } else if (isUserDeclining(queryText)) {
         response = handleDecline(sessionId);
       } else {
-        // L'utilisateur dit autre chose, on garde l'état mais on traite la nouvelle demande
+        // L'utilisateur dit autre chose, on traite la nouvelle demande
         response = await handleRegularIntent(intentName, sessionId);
       }
     } else {
