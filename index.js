@@ -123,143 +123,6 @@ function getSessionData(sessionId) {
   return data;
 }
 
-// 🆕 Fonction pour extraire le nom d'attraction des paramètres
-function extractAttractionNameFromParameters(parameters) {
-  if (parameters['attraction-name']) return parameters['attraction-name'];
-  if (parameters.attractionName) return parameters.attractionName;
-  if (parameters.name) return parameters.name;
-  
-  for (const [key, value] of Object.entries(parameters)) {
-    if (typeof value === 'string' && value.length > 2) {
-      return value;
-    }
-  }
-  return null;
-}
-
-// 🆕 Fonction pour extraire le nom de ville des paramètres
-function extractCityFromParameters(parameters) {
-  if (parameters.city) return parameters.city;
-  if (parameters['geo-city']) return parameters['geo-city'];
-  if (parameters.location) return parameters.location;
-  
-  for (const [key, value] of Object.entries(parameters)) {
-    if (typeof value === 'string' && value.length > 0) {
-      return value;
-    }
-  }
-  return null;
-}
-
-// 🆕 Fonction pour tenter plusieurs variantes du nom d'attraction
-async function tryMultipleAttractionNameVariants(attractionName) {
-  const variants = [
-    attractionName, // tel quel
-    attractionName.toLowerCase(), // tout en minuscules  
-    attractionName.charAt(0).toUpperCase() + attractionName.slice(1).toLowerCase(), // Première lettre majuscule
-    attractionName.toUpperCase(), // tout en majuscules
-  ];
-
-  // Supprimer les doublons
-  const uniqueVariants = [...new Set(variants)];
-  
-  console.log(`🔄 Trying attraction name variants: ${uniqueVariants.join(', ')}`);
-
-  for (const variant of uniqueVariants) {
-    try {
-      console.log(`🏛️ Trying attraction name variant: ${variant}`);
-      
-      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(variant)}`, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (response.data && (Array.isArray(response.data) ? response.data.length > 0 : response.data.id_Location)) {
-        console.log(`✅ Success with variant: ${variant}`);
-        // Si c'est un tableau, prendre le premier élément, sinon utiliser directement l'objet
-        const attractionData = Array.isArray(response.data) ? response.data[0] : response.data;
-        
-        return {
-          success: true,
-          data: attractionData,
-          usedVariant: variant
-        };
-      }
-    } catch (error) {
-      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue; // Essayer la variante suivante
-    }
-  }
-
-  return {
-    success: false,
-    data: null,
-    usedVariant: null
-  };
-}
-
-// 🆕 Fonction pour tenter plusieurs variantes de la ville (gestion de la casse)
-async function tryMultipleCityVariants(cityName) {
-  const variants = [
-    cityName, // tel quel
-    cityName.toLowerCase(), // tout en minuscules  
-    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(), // Première lettre majuscule
-    cityName.toUpperCase(), // tout en majuscules
-  ];
-
-  // Supprimer les doublons
-  const uniqueVariants = [...new Set(variants)];
-  
-  console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
-
-  let allResults = []; // Pour regrouper tous les résultats
-  let successfulVariant = null;
-
-  for (const variant of uniqueVariants) {
-    try {
-      console.log(`🌍 Trying city variant: ${variant}`);
-      
-      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (response.data && response.data.length > 0) {
-        console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
-        
-        // Ajouter les résultats à la liste (éviter les doublons)
-        const newResults = response.data.filter(newItem => 
-          !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
-        );
-        
-        allResults = [...allResults, ...newResults];
-        successfulVariant = variant;
-        
-        console.log(`📊 Total results so far: ${allResults.length}`);
-      }
-    } catch (error) {
-      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue; // Essayer la variante suivante
-    }
-  }
-
-  if (allResults.length > 0) {
-    return {
-      success: true,
-      data: allResults,
-      usedVariant: successfulVariant,
-      totalFound: allResults.length
-    };
-  }
-
-  return {
-    success: false,
-    data: null,
-    usedVariant: null,
-    totalFound: 0
-  };
-}
-
 // Handler pour "voir plus"
 async function handleShowMore(sessionId) {
   const sessionData = getSessionData(sessionId);
@@ -333,193 +196,92 @@ async function handleRegularIntent(intentName, sessionId, parameters = {}) {
       console.log(`🏙️ City extracted: ${cityName}`);
       return await handleAttractionsByCity(sessionId, cityName);
     
-    // 🆕 Nouveau cas pour la recherche par nom
-    case 'Ask_Attraction_By_Name':
-      const attractionName = parameters['attraction-name'] || 
-                             parameters.attractionName || 
-                             extractAttractionNameFromParameters(parameters);
-      console.log(`🏛️ Attraction name extracted: ${attractionName}`);
-      console.log(`📊 All parameters received: ${JSON.stringify(parameters)}`);
-      return await handleAttractionByName(sessionId, attractionName);
-    
     case 'Default Welcome Intent':
       return {
-        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, artificial attractions, attractions in a specific city, or search for a specific attraction by name."
+        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, artificial attractions, or attractions in a specific city."
       };
     
     default:
       return {
-        fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', 'artificial attractions', attractions in a specific city like 'attractions in Errachidia', or search for a specific attraction by name like 'show me Todra Gorges'."
+        fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', 'artificial attractions', or attractions in a specific city like 'attractions in Errachidia'."
       };
   }
 }
 
-// 🆕 Handler pour attraction par nom
-async function handleAttractionByName(sessionId, attractionName) {
-  try {
-    if (!attractionName) {
-      return {
-        fulfillmentText: "I'd be happy to show you information about a specific attraction! Could you please tell me the name of the attraction you're looking for? For example: 'Todra Gorges', 'Erg Chebbi', or any other attraction in Draa-Tafilalet."
-      };
+// 🆕 Fonction pour extraire le nom de ville des paramètres
+function extractCityFromParameters(parameters) {
+  if (parameters.city) return parameters.city;
+  if (parameters['geo-city']) return parameters['geo-city'];
+  if (parameters.location) return parameters.location;
+  
+  for (const [key, value] of Object.entries(parameters)) {
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
     }
+  }
+  return null;
+}
 
-    console.log(`🏛️ Fetching attraction by name: ${attractionName}`);
-    
-    const attractionResult = await tryMultipleAttractionNameVariants(attractionName);
+// 🆕 Fonction pour tenter plusieurs variantes de la ville (gestion de la casse)
+async function tryMultipleCityVariants(cityName) {
+  const variants = [
+    cityName, // tel quel
+    cityName.toLowerCase(), // tout en minuscules  
+    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(), // Première lettre majuscule
+    cityName.toUpperCase(), // tout en majuscules
+  ];
 
-    console.log(`📊 Attraction search result:`, {
-      success: attractionResult.success,
-      usedVariant: attractionResult.usedVariant
-    });
+  // Supprimer les doublons
+  const uniqueVariants = [...new Set(variants)];
+  
+  console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
 
-    if (!attractionResult.success) {
-      console.log(`❌ No results found for any variant of: ${attractionName}`);
-      return {
-        fulfillmentText: `I couldn't find any attraction named "${attractionName}". Please make sure you've spelled the attraction name correctly, or try asking about attractions by category or city. You can also ask for "all attractions" to see what's available.`
-      };
-    }
+  let allResults = []; // Pour regrouper tous les résultats
+  let successfulVariant = null;
 
-    const attraction = attractionResult.data;
-    const usedVariant = attractionResult.usedVariant;
-    
-    console.log(`📍 Attraction found: ${attraction.name}`);
-    console.log(`🔍 Attraction data:`, attraction);
-
-    const formattedAttractionName = attraction.name || attractionName;
-    console.log(`✅ Returning attraction details for ${formattedAttractionName}`);
-    
-    // Construire le message texte avec les informations
-    let detailsText = `Here's everything you need to know about **${formattedAttractionName}**:\n\n`;
-    
-    // Description
-    if (attraction.description) {
-      detailsText += `📝 **Description:** ${attraction.description}\n\n`;
-    }
-    
-    // Localisation
-    detailsText += `📍 **Location:** ${attraction.cityName || 'Unknown'}, ${attraction.countryName || 'Morocco'}\n\n`;
-    
-    // Prix d'entrée
-    const entryFee = attraction.entryFre || attraction.entryFee || 0;
-    const formattedPrice = entryFee == 0 ? 'Free' : `${entryFee} MAD`;
-    detailsText += `💰 **Entry Fee:** ${formattedPrice}\n\n`;
-    
-    // Visites guidées
-    const guideTours = attraction.guideToursAvailable ? 'Available' : 'Not available';
-    detailsText += `🎯 **Guided Tours:** ${guideTours}\n\n`;
-    
-    // Coordonnées
-    if (attraction.latitude && attraction.longitude && attraction.latitude !== 0 && attraction.longitude !== 0) {
-      detailsText += `🗺️ **Coordinates:** ${attraction.latitude.toFixed(6)}, ${attraction.longitude.toFixed(6)}\n\n`;
-    }
-    
-    // Informations spécifiques selon le type
-    if (attraction.protectedArea !== undefined) {
-      const protectedStatus = attraction.protectedArea ? 'Yes' : 'No';
-      detailsText += `🌿 **Protected Area:** ${protectedStatus}\n\n`;
-    }
-    
-    if (attraction.yearBuild && attraction.yearBuild.trim() !== '') {
-      detailsText += `📅 **Year Built:** ${attraction.yearBuild}\n\n`;
-    }
-    
-    if (attraction.style && attraction.style.trim() !== '') {
-      detailsText += `🏛️ **Architectural Style:** ${attraction.style}\n\n`;
-    }
-    
-    detailsText += `Feel free to ask me about directions, or if you want to see more attractions in ${attraction.cityName || 'the region'}! 😊`;
-    
-    return {
-      fulfillmentText: detailsText,
+  for (const variant of uniqueVariants) {
+    try {
+      console.log(`🌍 Trying city variant: ${variant}`);
       
-      payload: {
-        flutter: {
-          type: 'attraction_details',
-          data: {
-            attraction: attraction,
-            attractionName: formattedAttractionName
-          },
-          actions: [
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' },
-            { type: 'share_attraction', label: 'Share', icon: 'share' }
-          ]
-        }
+      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`, {
+        timeout: 15000,
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.data && response.data.length > 0) {
+        console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
+        
+        // Ajouter les résultats à la liste (éviter les doublons)
+        const newResults = response.data.filter(newItem => 
+          !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
+        );
+        
+        allResults = [...allResults, ...newResults];
+        successfulVariant = variant;
+        
+        console.log(`📊 Total results so far: ${allResults.length}`);
       }
-    };
+    } catch (error) {
+      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
+      continue; // Essayer la variante suivante
+    }
+  }
 
-  } catch (error) {
-    console.error(`❌ Error in handleAttractionByName for ${attractionName}:`, error);
-    console.error(`❌ Error stack:`, error.stack);
+  if (allResults.length > 0) {
     return {
-      fulfillmentText: `I'm having trouble finding information about ${attractionName} right now. Please try again later or ask about other attractions.`
+      success: true,
+      data: allResults,
+      usedVariant: successfulVariant,
+      totalFound: allResults.length
     };
   }
-}
 
-// 🆕 Handler pour attractions par ville
-async function handleAttractionsByCity(sessionId, cityName) {
-  try {
-    if (!cityName) {
-      return {
-        fulfillmentText: "I'd be happy to show you attractions in a specific city! Could you please tell me which city in Draa-Tafilalet you're interested in? For example: Errachidia, Midelt, Tinghir, Zagora, or any other city."
-      };
-    }
-
-    console.log(`🏙️ Fetching attractions for city: ${cityName}`);
-    
-    const cityResult = await tryMultipleCityVariants(cityName);
-
-    console.log(`📊 City search result:`, {
-      success: cityResult.success,
-      totalFound: cityResult.totalFound,
-      usedVariant: cityResult.usedVariant
-    });
-
-    if (!cityResult.success) {
-      console.log(`❌ No results found for any variant of: ${cityName}`);
-      return {
-        fulfillmentText: `I couldn't find any information about "${cityName}". Please make sure you've spelled the city name correctly, or try asking about another city in Draa-Tafilalet like Errachidia, Midelt, Tinghir, or Zagora.`
-      };
-    }
-
-    const allLocations = cityResult.data;
-    const usedVariant = cityResult.usedVariant;
-    
-    console.log(`📍 ${allLocations.length} total locations fetched for city variants`);
-    console.log(`🔍 Sample location structure:`, allLocations[0]);
-
-    // Filtrer pour ne garder que les attractions (qui ont entryFre et guideToursAvailable)
-    const attractions = allLocations.filter(location => {
-      const hasEntryFre = location.hasOwnProperty('entryFre');
-      const hasGuideToursAvailable = location.hasOwnProperty('guideToursAvailable');
-      
-      console.log(`🔍 Location "${location.name}": entryFre=${hasEntryFre}, guideToursAvailable=${hasGuideToursAvailable}`);
-      
-      return hasEntryFre && hasGuideToursAvailable;
-    });
-
-    console.log(`🎯 ${attractions.length} attractions filtered from ${allLocations.length} locations`);
-
-    if (!attractions || attractions.length === 0) {
-      console.log(`⚠️ No attractions found, but found ${allLocations.length} other locations`);
-      return {
-        fulfillmentText: `I found ${allLocations.length} locations in ${cityName}, but no tourist attractions are currently available. Try asking about another city in Draa-Tafilalet, or ask about attractions by category (natural, cultural, historical, or artificial attractions).`
-      };
-    }
-
-    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-    console.log(`✅ Returning ${attractions.length} attractions for ${formattedCityName}`);
-    
-    return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
-
-  } catch (error) {
-    console.error(`❌ Error in handleAttractionsByCity for ${cityName}:`, error);
-    console.error(`❌ Error stack:`, error.stack);
-    return {
-      fulfillmentText: `I'm having trouble finding attractions in ${cityName} right now. Please try again later or ask about attractions in another city.`
-    };
-  }
+  return {
+    success: false,
+    data: null,
+    usedVariant: null,
+    totalFound: 0
+  };
 }
 
 // Handler functions avec pagination
@@ -663,6 +425,71 @@ async function handleArtificialAttractions(sessionId) {
   }
 }
 
+// 🆕 Handler pour attractions par ville
+async function handleAttractionsByCity(sessionId, cityName) {
+  try {
+    if (!cityName) {
+      return {
+        fulfillmentText: "I'd be happy to show you attractions in a specific city! Could you please tell me which city in Draa-Tafilalet you're interested in? For example: Errachidia, Midelt, Tinghir, Zagora, or any other city."
+      };
+    }
+
+    console.log(`🏙️ Fetching attractions for city: ${cityName}`);
+    
+    const cityResult = await tryMultipleCityVariants(cityName);
+
+    console.log(`📊 City search result:`, {
+      success: cityResult.success,
+      totalFound: cityResult.totalFound,
+      usedVariant: cityResult.usedVariant
+    });
+
+    if (!cityResult.success) {
+      console.log(`❌ No results found for any variant of: ${cityName}`);
+      return {
+        fulfillmentText: `I couldn't find any information about "${cityName}". Please make sure you've spelled the city name correctly, or try asking about another city in Draa-Tafilalet like Errachidia, Midelt, Tinghir, or Zagora.`
+      };
+    }
+
+    const allLocations = cityResult.data;
+    const usedVariant = cityResult.usedVariant;
+    
+    console.log(`📍 ${allLocations.length} total locations fetched for city variants`);
+    console.log(`🔍 Sample location structure:`, allLocations[0]);
+
+    // Filtrer pour ne garder que les attractions (qui ont entryFre et guideToursAvailable)
+    const attractions = allLocations.filter(location => {
+      const hasEntryFre = location.hasOwnProperty('entryFre');
+      const hasGuideToursAvailable = location.hasOwnProperty('guideToursAvailable');
+      
+      console.log(`🔍 Location "${location.name}": entryFre=${hasEntryFre}, guideToursAvailable=${hasGuideToursAvailable}`);
+      
+      return hasEntryFre && hasGuideToursAvailable;
+    });
+
+    console.log(`🎯 ${attractions.length} attractions filtered from ${allLocations.length} locations`);
+
+    if (!attractions || attractions.length === 0) {
+      console.log(`⚠️ No attractions found, but found ${allLocations.length} other locations`);
+      return {
+        fulfillmentText: `I found ${allLocations.length} locations in ${cityName}, but no tourist attractions are currently available. Try asking about another city in Draa-Tafilalet, or ask about attractions by category (natural, cultural, historical, or artificial attractions).`
+      };
+    }
+
+    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+    console.log(`✅ Returning ${attractions.length} attractions for ${formattedCityName}`);
+    
+    return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
+
+  } catch (error) {
+    console.error(`❌ Error in handleAttractionsByCity for ${cityName}:`, error);
+    console.error(`❌ Error stack:`, error.stack);
+    return {
+      fulfillmentText: `I'm having trouble finding attractions in ${cityName} right now. Please try again later or ask about attractions in another city.`
+    };
+  }
+}
+
 // Fonction principale de pagination (modifiée pour supporter les villes)
 function handlePaginatedResponse(allAttractions, category, categoryDisplayName, sessionId, cityName = null) {
   const ITEMS_PER_PAGE = 10;
@@ -778,7 +605,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Tourism Bot Backend started on port ${PORT}`);
   console.log(`📱 Webhook URL: https://tourism-bot-backend-production.up.railway.app/webhook`);
   console.log(`🏛️ Tourism API: ${API_BASE_URL}`);
-  console.log('✅ Ready to handle Dialogflow requests with pagination, city search, and attraction details!');
+  console.log('✅ Ready to handle Dialogflow requests with pagination and city search!');
 });
 
 module.exports = app;
