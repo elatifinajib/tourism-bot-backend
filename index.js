@@ -642,7 +642,7 @@ async function handleShowMoreFromContext(sessionId, outputContexts) {
   console.log('📄 Handling show more from Dialogflow context');
   console.log(`🔍 Session ID: ${sessionId}`);
   
-  // Récupérer les données depuis notre session storage
+  // ✅ CORRECTION: Récupérer les données AVANT de les supprimer
   const sessionData = getSessionData(sessionId);
   
   console.log(`📊 Session data found:`, sessionData ? 'YES' : 'NO');
@@ -652,6 +652,7 @@ async function handleShowMoreFromContext(sessionId, outputContexts) {
     console.log(`📊 Has waitingForMoreResponse:`, sessionData.waitingForMoreResponse);
   }
   
+  // ✅ Vérifier QU'ON A bien les données
   if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
     console.log('❌ No pagination data found in session');
     return {
@@ -659,11 +660,13 @@ async function handleShowMoreFromContext(sessionId, outputContexts) {
     };
   }
 
+  // ✅ EXTRAIRE les données AVANT de nettoyer
   const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
   
-  console.log(`✅ Found ${remainingAttractions.length} remaining attractions`);
+  console.log(`✅ Found ${remainingAttractions.length} remaining attractions for category: ${category}`);
   
-  // Nettoyer la session après utilisation
+  // ✅ MAINTENANT on peut nettoyer la session
+  console.log('🧹 Cleaning session data after extracting');
   sessionStorage.delete(sessionId);
 
   const naturalResponse = cityName 
