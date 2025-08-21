@@ -8,248 +8,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }
-
-// 🆕 Fonction pour extraire le nom d'attraction des paramètres
-function extractAttractionNameFromParameters(parameters) {
-  if (parameters.attraction) return parameters.attraction;
-  if (parameters.name) return parameters.name;
-  if (parameters['attraction-name']) return parameters['attraction-name'];
-  
-  for (const [key, value] of Object.entries(parameters)) {
-    if (typeof value === 'string' && value.length > 2) {
-      return value;
-    }
-  }
-  return null;
-}
-
-// 🆕 Fonction pour tester plusieurs variantes du nom d'attraction
-async function tryMultipleAttractionNameVariants(attractionName) {
-  const variants = [
-    attractionName, // tel quel
-    attractionName.toLowerCase(), // tout en minuscules
-    attractionName.charAt(0).toUpperCase() + attractionName.slice(1).toLowerCase(), // Première lettre majuscule
-    attractionName.toUpperCase(), // tout en majuscules
-  ];
-
-  const uniqueVariants = [...new Set(variants)];
-  console.log(`🔄 Trying attraction name variants: ${uniqueVariants.join(', ')}`);
-
-  for (const variant of uniqueVariants) {
-    try {
-      console.log(`🌍 Trying attraction name variant: ${variant}`);
-      
-      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(variant)}`, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (response.data && Object.keys(response.data).length > 0) {
-        console.log(`✅ Success with variant: ${variant} - Found attraction details`);
-        return {
-          success: true,
-          data: response.data,
-          usedVariant: variant
-        };
-      }
-    } catch (error) {
-      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue;
-    }
-  }
-
-  return {
-    success: false,
-    data: null,
-    usedVariant: null
-  };
-}
-
-// 🆕 Handler pour attraction par nom
-async function handleAttractionByName(sessionId, attractionName) {
-  try {
-    if (!attractionName) {
-      return {
-        fulfillmentText: "I'd be happy to show you details about a specific attraction! Could you please tell me the name of the attraction you're interested in? For example: 'Ksar', 'Hassan II Mosque', or any other attraction name."
-      };
-    }
-
-    console.log(`🏛️ Fetching attraction details for: ${attractionName}`);
-    
-    const attractionResult = await tryMultipleAttractionNameVariants(attractionName);
-
-    if (!attractionResult.success) {
-      console.log(`❌ No results found for any variant of: ${attractionName}`);
-      return {
-        fulfillmentText: `I couldn't find any attraction named "${attractionName}". Please make sure you've spelled the attraction name correctly, or try asking about attractions in a specific city or category.`
-      };
-    }
-
-    const attraction = attractionResult.data;
-    console.log(`✅ Found attraction: ${attraction.name}`);
-
-    // Vérifier que c'est bien une attraction (et pas une amenity)
-    const isAttraction = attraction.hasOwnProperty('entryFre') && attraction.hasOwnProperty('guideToursAvailable');
-    
-    if (!isAttraction) {
-      console.log(`⚠️ Found location but it's not an attraction: ${attraction.name}`);
-      return {
-        fulfillmentText: `I found a location named "${attractionName}", but it's not classified as a tourist attraction. Try asking about tourist attractions in a specific city or category.`
-      };
-    }
-
-    return {
-      fulfillmentText: `Here are the complete details about ${attraction.name}:`,
-      
-      payload: {
-        flutter: {
-          type: 'attraction_details',
-          data: {
-            attraction: attraction,
-            attractionName: attraction.name
-          },
-          actions: [
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' },
-            { type: 'share', label: 'Share', icon: 'share' }
-          ]
-        }
-      }
-    };
-
-  } catch (error) {
-    console.error(`❌ Error in handleAttractionByName for ${attractionName}:`, error);
-    return {
-      fulfillmentText: `I'm having trouble finding details about ${attractionName} right now. Please try again later or ask about attractions in a specific city.`
-    };
-  }
-
-// 🆕 Fonction pour extraire le nom d'attraction des paramètres
-function extractAttractionNameFromParameters(parameters) {
-  if (parameters.attraction) return parameters.attraction;
-  if (parameters.name) return parameters.name;
-  if (parameters['attraction-name']) return parameters['attraction-name'];
-  
-  for (const [key, value] of Object.entries(parameters)) {
-    if (typeof value === 'string' && value.length > 2) {
-      return value;
-    }
-  }
-  return null;
-}
-
-// 🆕 Fonction pour tester plusieurs variantes du nom d'attraction (gestion de la casse)
-async function tryMultipleAttractionNameVariants(attractionName) {
-  const variants = [
-    attractionName, // tel quel
-    attractionName.toLowerCase(), // tout en minuscules
-    attractionName.charAt(0).toUpperCase() + attractionName.slice(1).toLowerCase(), // Première lettre majuscule
-    attractionName.toUpperCase(), // tout en majuscules
-    attractionName.replace(/\s+/g, ' ').trim(), // Nettoie les espaces multiples
-  ];
-
-  // Supprimer les doublons
-  const uniqueVariants = [...new Set(variants)];
-  
-  console.log(`🔄 Trying attraction name variants: ${uniqueVariants.join(', ')}`);
-
-  for (const variant of uniqueVariants) {
-    try {
-      console.log(`🌍 Trying attraction name variant: ${variant}`);
-      
-      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(variant)}`, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (response.data && Object.keys(response.data).length > 0) {
-        console.log(`✅ Success with variant: ${variant} - Found attraction details`);
-        return {
-          success: true,
-          data: response.data,
-          usedVariant: variant
-        };
-      }
-    } catch (error) {
-      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue;
-    }
-  }
-
-  return {
-    success: false,
-    data: null,
-    usedVariant: null
-  };
-}
-
-// 🆕 Handler pour attraction par nom
-async function handleAttractionByName(sessionId, attractionName) {
-  try {
-    if (!attractionName) {
-      return {
-        fulfillmentText: "I'd be happy to show you details about a specific attraction! Could you please tell me the name of the attraction you're interested in? For example: 'Ksar', 'Hassan II Mosque', or any other attraction name."
-      };
-    }
-
-    console.log(`🏛️ Fetching attraction details for: ${attractionName}`);
-    
-    const attractionResult = await tryMultipleAttractionNameVariants(attractionName);
-
-    console.log(`📊 Attraction search result:`, {
-      success: attractionResult.success,
-      usedVariant: attractionResult.usedVariant
-    });
-
-    if (!attractionResult.success) {
-      console.log(`❌ No results found for any variant of: ${attractionName}`);
-      return {
-        fulfillmentText: `I couldn't find any attraction named "${attractionName}". Please make sure you've spelled the attraction name correctly, or try asking about attractions in a specific city or category.`
-      };
-    }
-
-    const attraction = attractionResult.data;
-    console.log(`✅ Found attraction: ${attraction.name}`);
-
-    // Vérifier que c'est bien une attraction (et pas une amenity)
-    const isAttraction = attraction.hasOwnProperty('entryFre') && attraction.hasOwnProperty('guideToursAvailable');
-    
-    if (!isAttraction) {
-      console.log(`⚠️ Found location but it's not an attraction: ${attraction.name}`);
-      return {
-        fulfillmentText: `I found a location named "${attractionName}", but it's not classified as a tourist attraction. Try asking about tourist attractions in a specific city or category.`
-      };
-    }
-
-    const formattedAttractionName = attraction.name;
-    
-    return {
-      fulfillmentText: `Here are the complete details about ${formattedAttractionName}:`,
-      
-      payload: {
-        flutter: {
-          type: 'attraction_details',
-          data: {
-            attraction: attraction,
-            attractionName: formattedAttractionName
-          },
-          actions: [
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' },
-            { type: 'share', label: 'Share', icon: 'share' }
-          ]
-        }
-      }
-    };
-
-  } catch (error) {
-    console.error(`❌ Error in handleAttractionByName for ${attractionName}:`, error);
-    console.error(`❌ Error stack:`, error.stack);
-    return {
-      fulfillmentText: `I'm having trouble finding details about ${attractionName} right now. Please try again later or ask about attractions in a specific city.`
-    };
-  }));
+app.use(express.urlencoded({ extended: true }));
 
 // API Base URL
 const API_BASE_URL = 'https://touristeproject.onrender.com';
@@ -437,16 +196,6 @@ async function handleRegularIntent(intentName, sessionId, parameters = {}) {
       console.log(`🏙️ City extracted: ${cityName}`);
       return await handleAttractionsByCity(sessionId, cityName);
     
-    case 'Ask_Attraction_By_Name':
-      const attractionName = parameters.attraction || parameters.name || extractAttractionNameFromParameters(parameters);
-      console.log(`🏛️ Attraction name extracted: ${attractionName}`);
-      return await handleAttractionByName(sessionId, attractionName);
-    
-    case 'Ask_Attraction_By_Name':
-      const attractionName = parameters.attraction || parameters.name || extractAttractionNameFromParameters(parameters);
-      console.log(`🏛️ Attraction name extracted: ${attractionName}`);
-      return await handleAttractionByName(sessionId, attractionName);
-    
     case 'Default Welcome Intent':
       return {
         fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, artificial attractions, or attractions in a specific city."
@@ -476,13 +225,10 @@ function extractCityFromParameters(parameters) {
 // 🆕 Fonction pour tenter plusieurs variantes de la ville (gestion de la casse)
 async function tryMultipleCityVariants(cityName) {
   const variants = [
-    cityName, // tel quel (ex: sAFi)
-    cityName.toLowerCase(), // tout en minuscules (ex: safi)
-    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(), // Première lettre majuscule (ex: Safi)
-    cityName.toUpperCase(), // tout en majuscules (ex: SAFI)
-    // 🆕 Variantes supplémentaires pour les casses mixtes courantes
-    cityName.toLowerCase().charAt(0).toUpperCase() + cityName.toLowerCase().slice(1), // Force première majuscule
-    cityName.replace(/\s+/g, ''), // Supprime les espaces si il y en a
+    cityName, // tel quel
+    cityName.toLowerCase(), // tout en minuscules  
+    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(), // Première lettre majuscule
+    cityName.toUpperCase(), // tout en majuscules
   ];
 
   // Supprimer les doublons
@@ -491,7 +237,7 @@ async function tryMultipleCityVariants(cityName) {
   console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
 
   let allResults = []; // Pour regrouper tous les résultats
-  let successfulVariants = []; // Pour tracker les variantes qui marchent
+  let successfulVariant = null;
 
   for (const variant of uniqueVariants) {
     try {
@@ -505,13 +251,13 @@ async function tryMultipleCityVariants(cityName) {
       if (response.data && response.data.length > 0) {
         console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
         
-        // Ajouter les résultats à la liste (éviter les doublons par id_Location)
+        // Ajouter les résultats à la liste (éviter les doublons)
         const newResults = response.data.filter(newItem => 
           !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
         );
         
         allResults = [...allResults, ...newResults];
-        successfulVariants.push(variant);
+        successfulVariant = variant;
         
         console.log(`📊 Total results so far: ${allResults.length}`);
       }
@@ -525,7 +271,7 @@ async function tryMultipleCityVariants(cityName) {
     return {
       success: true,
       data: allResults,
-      usedVariants: successfulVariants, // Toutes les variantes qui ont marché
+      usedVariant: successfulVariant,
       totalFound: allResults.length
     };
   }
@@ -533,7 +279,7 @@ async function tryMultipleCityVariants(cityName) {
   return {
     success: false,
     data: null,
-    usedVariants: [],
+    usedVariant: null,
     totalFound: 0
   };
 }
@@ -695,7 +441,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
     console.log(`📊 City search result:`, {
       success: cityResult.success,
       totalFound: cityResult.totalFound,
-      usedVariants: cityResult.usedVariants
+      usedVariant: cityResult.usedVariant
     });
 
     if (!cityResult.success) {
@@ -706,7 +452,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
     }
 
     const allLocations = cityResult.data;
-    const usedVariants = cityResult.usedVariants;
+    const usedVariant = cityResult.usedVariant;
     
     console.log(`📍 ${allLocations.length} total locations fetched for city variants`);
     console.log(`🔍 Sample location structure:`, allLocations[0]);
