@@ -247,14 +247,15 @@ app.get('/check-dialogflow-config', (req, res) => {
   });
 });
 
-// 🔄 Endpoint proxy simple pour Dialogflow depuis Flutter
+// Remplacez votre endpoint /dialogflow-proxy dans index.js par cette version
+
 app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     
     console.log(`🔄 Proxy request from Flutter: "${message}" (session: ${sessionId})`);
     
-    // Si on a configuré Google Auth, utiliser la vraie API Dialogflow
+    // ✅ NOUVELLE APPROCHE: Toujours appeler Dialogflow d'abord
     if (googleAuth) {
       try {
         const token = await getGoogleAccessToken();
@@ -282,34 +283,28 @@ app.post('/dialogflow-proxy', async (req, res) => {
         const queryResult = dialogflowResponse.data.queryResult;
         const intentName = queryResult.intent.displayName;
         const parameters = queryResult.parameters || {};
+        const outputContexts = queryResult.outputContexts || [];
         
         console.log(`✅ Dialogflow API response: ${intentName}`);
+        console.log(`📊 Output contexts:`, outputContexts.map(ctx => ctx.name));
         
-        // Si c'est un intent complexe, traiter via nos handlers
-        if (_needsComplexResponse(intentName)) {
-          const complexResponse = await handleDialogflowIntent(intentName, sessionId, parameters);
-          return res.json(complexResponse);
-        } else {
-          // Réponse simple de Dialogflow
-          return res.json({
-            fulfillmentText: queryResult.fulfillmentText || 'I understand, but I\'m not sure how to help with that.'
-          });
-        }
+        // ✅ TRAITER LA RÉPONSE SELON L'INTENT DÉTECTÉ PAR DIALOGFLOW
+        const response = await processDialogflowResponse(queryResult, sessionId, outputContexts);
+        return res.json(response);
         
       } catch (dialogflowError) {
         console.error('❌ Dialogflow API error:', dialogflowError.message);
-        // Fallback vers la simulation
+        return res.status(500).json({
+          fulfillmentText: "I'm having trouble connecting to Dialogflow. Please try again."
+        });
       }
+    } else {
+      // Fallback si pas de credentials Google
+      console.log('📋 No Google Auth - using local detection');
+      const simulatedIntent = _detectIntentLocally(message);
+      const response = await handleDialogflowIntent(simulatedIntent, sessionId, {});
+      return res.json(response);
     }
-    
-    // Fallback : Simuler Dialogflow avec notre logique locale
-    console.log('📋 Using local intent detection fallback');
-    
-    const simulatedIntent = _detectIntentLocally(message);
-    const simulatedParameters = _extractParametersLocally(message);
-    
-    const response = await handleDialogflowIntent(simulatedIntent, sessionId, simulatedParameters);
-    res.json(response);
     
   } catch (error) {
     console.error('❌ Proxy error:', error);
@@ -319,6 +314,372 @@ app.post('/dialogflow-proxy', async (req, res) => {
   }
 });
 
+// ✅ NOUVELLE FONCTION: Traiter les réponses Dialogflow avec contexts
+async function processDialogflowResponse(queryResult, sessionId, outputContexts) {
+  const intentName = queryResult.intent.displayName;
+  const parameters = queryResult.parameters || {};
+  const fulfillmentText = queryResult.fulfillmentText || '';
+  
+  console.log(`🎯 Processing Dialogflow response for intent: ${intentName}`);
+  
+  try {
+    switch (intentName) {
+      case 'Ask_All_Attractions':
+        console.log('📋 Handling: All Attractions');
+        return await handleAllAttractionsWithContext(sessionId, outputContexts);
+      
+      case 'Ask_Natural_Attractions':
+        console.log('🌿 Handling: Natural Attractions');
+        return await handleNaturalAttractionsWithContext(sessionId, outputContexts);
+      
+      case 'Ask_Cultural_Attractions':
+        console.log('🎭 Handling: Cultural Attractions');
+        return await handleCulturalAttractionsWithContext(sessionId, outputContexts);
+      
+      case 'Ask_Historical_Attractions':
+        console.log('🏛️ Handling: Historical Attractions');
+        return await handleHistoricalAttractionsWithContext(sessionId, outputContexts);
+      
+      case 'Ask_Artificial_Attractions':
+        console.log('🏗️ Handling: Artificial Attractions');
+        return await handleArtificialAttractionsWithContext(sessionId, outputContexts);
+      
+      case 'Ask_Attractions_By_City':
+        const cityName = parameters.city || parameters['geo-city'] || parameters.name;
+        console.log(`🏙️ Handling: Attractions by City - ${cityName}`);
+        return await handleAttractionsByCityWithContext(sessionId, cityName, outputContexts);
+      
+      case 'Pagination_ShowMore':
+        console.log('➡️ Handling: Show More (via Dialogflow context)');
+        return await handleShowMoreFromContext(sessionId, outputContexts);
+      
+      case 'Pagination_Decline':
+        console.log('❌ Handling: Decline More (via Dialogflow context)');
+        return await handleDeclineFromContext(sessionId);
+      
+      case 'Default Welcome Intent':
+        console.log('👋 Handling: Welcome');
+        return {
+          fulfillmentText: fulfillmentText || "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions."
+        };
+      
+      default:
+        console.log(`❓ Unknown intent: ${intentName}`);
+        return {
+          fulfillmentText: fulfillmentText || `I understand you're asking about "${intentName}", but I'm not sure how to help with that.`
+        };
+    }
+  } catch (error) {
+    console.error(`❌ Error processing intent ${intentName}:`, error);
+    return {
+      fulfillmentText: "Sorry, there was an error processing your request."
+    };
+  }
+}
+
+// ✅ NOUVELLES FONCTIONS: Handlers avec support des contexts Dialogflow
+
+async function handleAllAttractionsWithContext(sessionId, outputContexts) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
+    const allAttractions = response.data;
+    
+    if (!allAttractions || allAttractions.length === 0) {
+      return { fulfillmentText: "No attractions found at the moment." };
+    }
+
+    return handlePaginatedResponseWithContext(
+      allAttractions, 
+      'all', 
+      'general', 
+      sessionId, 
+      outputContexts
+    );
+  } catch (error) {
+    console.error('❌ Error fetching all attractions:', error);
+    return { fulfillmentText: "Having trouble accessing attractions database." };
+  }
+}
+
+async function handleNaturalAttractionsWithContext(sessionId, outputContexts) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/NaturalAttractions`);
+    const allAttractions = response.data;
+    
+    if (!allAttractions || allAttractions.length === 0) {
+      return { fulfillmentText: "No natural attractions found." };
+    }
+
+    return handlePaginatedResponseWithContext(
+      allAttractions, 
+      'natural', 
+      'natural', 
+      sessionId, 
+      outputContexts
+    );
+  } catch (error) {
+    console.error('❌ Error fetching natural attractions:', error);
+    return { fulfillmentText: "Having trouble finding natural attractions." };
+  }
+}
+
+async function handleCulturalAttractionsWithContext(sessionId, outputContexts) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/CulturalAttractions`);
+    const allAttractions = response.data;
+    
+    if (!allAttractions || allAttractions.length === 0) {
+      return { fulfillmentText: "No cultural attractions found." };
+    }
+
+    return handlePaginatedResponseWithContext(
+      allAttractions, 
+      'cultural', 
+      'cultural', 
+      sessionId, 
+      outputContexts
+    );
+  } catch (error) {
+    console.error('❌ Error fetching cultural attractions:', error);
+    return { fulfillmentText: "Having trouble finding cultural attractions." };
+  }
+}
+
+async function handleHistoricalAttractionsWithContext(sessionId, outputContexts) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/HistoricalAttractions`);
+    const allAttractions = response.data;
+    
+    if (!allAttractions || allAttractions.length === 0) {
+      return { fulfillmentText: "No historical attractions found." };
+    }
+
+    return handlePaginatedResponseWithContext(
+      allAttractions, 
+      'historical', 
+      'historical', 
+      sessionId, 
+      outputContexts
+    );
+  } catch (error) {
+    console.error('❌ Error fetching historical attractions:', error);
+    return { fulfillmentText: "Having trouble finding historical attractions." };
+  }
+}
+
+async function handleArtificialAttractionsWithContext(sessionId, outputContexts) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/ArtificialAttractions`);
+    const allAttractions = response.data;
+    
+    if (!allAttractions || allAttractions.length === 0) {
+      return { fulfillmentText: "No artificial attractions found." };
+    }
+
+    return handlePaginatedResponseWithContext(
+      allAttractions, 
+      'artificial', 
+      'artificial', 
+      sessionId, 
+      outputContexts
+    );
+  } catch (error) {
+    console.error('❌ Error fetching artificial attractions:', error);
+    return { fulfillmentText: "Having trouble finding artificial attractions." };
+  }
+}
+
+async function handleAttractionsByCityWithContext(sessionId, cityName, outputContexts) {
+  try {
+    if (!cityName) {
+      return {
+        fulfillmentText: "Please tell me which city you're interested in."
+      };
+    }
+
+    const cityResult = await tryMultipleCityVariants(cityName);
+    
+    if (!cityResult.success) {
+      return {
+        fulfillmentText: `I couldn't find information about "${cityName}". Try another city.`
+      };
+    }
+
+    const attractions = cityResult.data.filter(location => 
+      location.hasOwnProperty('entryFre') && location.hasOwnProperty('guideToursAvailable')
+    );
+
+    if (!attractions || attractions.length === 0) {
+      return {
+        fulfillmentText: `No tourist attractions found in ${cityName}.`
+      };
+    }
+
+    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+    
+    return handlePaginatedResponseWithContext(
+      attractions, 
+      `city_${cityName.toLowerCase()}`, 
+      `attractions in ${formattedCityName}`, 
+      sessionId, 
+      outputContexts,
+      formattedCityName
+    );
+  } catch (error) {
+    console.error(`❌ Error finding attractions in ${cityName}:`, error);
+    return {
+      fulfillmentText: `Having trouble finding attractions in ${cityName}.`
+    };
+  }
+}
+
+// ✅ FONCTION DE PAGINATION AVEC CONTEXTS DIALOGFLOW
+function handlePaginatedResponseWithContext(allAttractions, category, categoryDisplayName, sessionId, outputContexts, cityName = null) {
+  const ITEMS_PER_PAGE = 10;
+  const totalCount = allAttractions.length;
+  
+  if (totalCount <= ITEMS_PER_PAGE) {
+    // Pas de pagination nécessaire
+    const messagesByCategory = {
+      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet!`,
+      'natural': `I found ${totalCount} beautiful natural attractions!`,
+      'cultural': `I found ${totalCount} fascinating cultural attractions!`,
+      'historical': `I found ${totalCount} remarkable historical attractions!`,
+      'artificial': `I found ${totalCount} impressive artificial attractions!`
+    };
+
+    let displayMessage;
+    if (cityName) {
+      displayMessage = `I found ${totalCount} wonderful attractions in ${cityName}!`;
+    } else {
+      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+    }
+
+    return {
+      fulfillmentText: displayMessage,
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: category,
+          data: {
+            attractions: allAttractions,
+            count: totalCount,
+            cityName: cityName
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+  } else {
+    // Pagination nécessaire - stocker dans le context Dialogflow
+    const firstPageAttractions = allAttractions.slice(0, ITEMS_PER_PAGE);
+    const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
+    const remainingCount = remainingAttractions.length;
+    
+    // ✅ STOCKER LES DONNÉES DANS LE SESSION STORAGE TEMPORAIREMENT
+    // (En attendant de tout migrer vers les contexts Dialogflow)
+    saveSessionData(sessionId, {
+      remainingAttractions,
+      category,
+      categoryDisplayName,
+      cityName: cityName
+    });
+
+    const messagesByCategory = {
+      'all': `I found ${totalCount} amazing attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'natural': `I found ${totalCount} natural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'cultural': `I found ${totalCount} cultural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'historical': `I found ${totalCount} historical attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'artificial': `I found ${totalCount} artificial attractions! Here are the first ${ITEMS_PER_PAGE}:`
+    };
+
+    let displayMessage;
+    if (cityName) {
+      displayMessage = `I found ${totalCount} attractions in ${cityName}! Here are the first ${ITEMS_PER_PAGE}:`;
+    } else {
+      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+    }
+
+    return {
+      fulfillmentText: displayMessage,
+      payload: {
+        flutter: {
+          type: 'attractions_list_with_more',
+          category: category,
+          data: {
+            attractions: firstPageAttractions,
+            count: firstPageAttractions.length,
+            hasMore: true,
+            totalCount: totalCount,
+            remainingCount: remainingCount,
+            cityName: cityName,
+            sendMoreMessage: true
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      },
+      // ✅ DIALOGFLOW CONTEXT SERA AUTOMATIQUEMENT AJOUTÉ
+      outputContexts: outputContexts
+    };
+  }
+}
+
+// ✅ HANDLERS POUR LES INTENTS DE PAGINATION
+async function handleShowMoreFromContext(sessionId, outputContexts) {
+  console.log('📄 Handling show more from Dialogflow context');
+  
+  // Récupérer les données depuis notre session storage temporaire
+  const sessionData = getSessionData(sessionId);
+  
+  if (!sessionData || !sessionData.remainingAttractions) {
+    return {
+      fulfillmentText: "I don't have any additional attractions to show right now."
+    };
+  }
+
+  const { remainingAttractions, category, categoryDisplayName } = sessionData;
+  
+  // Nettoyer la session
+  sessionStorage.delete(sessionId);
+
+  return {
+    fulfillmentText: `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`,
+    payload: {
+      flutter: {
+        type: 'attractions_list',
+        category: category,
+        data: {
+          attractions: remainingAttractions,
+          count: remainingAttractions.length,
+        },
+        actions: [
+          { type: 'view_details', label: 'View Details', icon: 'info' },
+          { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+          { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+        ]
+      }
+    }
+  };
+}
+
+async function handleDeclineFromContext(sessionId) {
+  console.log('❌ Handling decline from Dialogflow context');
+  
+  // Nettoyer la session
+  sessionStorage.delete(sessionId);
+  
+  return {
+    fulfillmentText: "No problem! I'm here whenever you need help discovering attractions in Draa-Tafilalet. 😊"
+  };
+}
 // 🔥 Webhook Dialogflow - pour les appels directs de Dialogflow
 app.post('/webhook', async (req, res) => {
   try {
