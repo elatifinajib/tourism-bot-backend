@@ -268,11 +268,17 @@ async function tryMultipleCityVariants(cityName) {
 async function handleAllAttractions(sessionId) {
   try {
     console.log('🏛️ Fetching all attractions...');
+    console.log('🔗 URL:', `${API_BASE_URL}/api/public/getAll/Attraction`);
     
     const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
       timeout: 15000,
       headers: { 'Content-Type': 'application/json' }
     });
+
+    console.log('📊 Response status:', response.status);
+    console.log('📊 Response data type:', typeof response.data);
+    console.log('📊 Response data length:', response.data?.length);
+    console.log('📊 First item:', response.data?.[0]);
 
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} attractions fetched`);
@@ -287,6 +293,8 @@ async function handleAllAttractions(sessionId) {
 
   } catch (error) {
     console.error('❌ Error fetching all attractions:', error.message);
+    console.error('❌ Error details:', error.response?.data);
+    console.error('❌ Error status:', error.response?.status);
     return {
       fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
     };
@@ -296,11 +304,15 @@ async function handleAllAttractions(sessionId) {
 async function handleNaturalAttractions(sessionId) {
   try {
     console.log('🌿 Fetching natural attractions...');
+    console.log('🔗 URL:', `${API_BASE_URL}/api/public/NaturalAttractions`);
     
     const response = await axios.get(`${API_BASE_URL}/api/public/NaturalAttractions`, {
       timeout: 15000,
       headers: { 'Content-Type': 'application/json' }
     });
+
+    console.log('📊 Natural - Response status:', response.status);
+    console.log('📊 Natural - Response data length:', response.data?.length);
 
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} natural attractions fetched`);
@@ -315,12 +327,13 @@ async function handleNaturalAttractions(sessionId) {
 
   } catch (error) {
     console.error('❌ Error fetching natural attractions:', error.message);
+    console.error('❌ Error details:', error.response?.data);
+    console.error('❌ Error status:', error.response?.status);
     return {
       fulfillmentText: "I'm having trouble finding natural attractions at the moment. Please try again later."
     };
   }
 }
-
 async function handleCulturalAttractions(sessionId) {
   try {
     console.log('🎭 Fetching cultural attractions...');
