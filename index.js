@@ -314,69 +314,76 @@ app.post('/dialogflow-proxy', async (req, res) => {
   }
 });
 
-// ✅ NOUVELLE FONCTION: Traiter les réponses Dialogflow avec contexts
+// ✅ Version avec logs détaillés pour debug
 async function processDialogflowResponse(queryResult, sessionId, outputContexts) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
   const fulfillmentText = queryResult.fulfillmentText || '';
   
-  console.log(`🎯 Processing Dialogflow response for intent: ${intentName}`);
+  console.log(`🎯 ========== PROCESSING DIALOGFLOW RESPONSE ==========`);
+  console.log(`🎯 Intent Name: ${intentName}`);
+  console.log(`🎯 Session ID: ${sessionId}`);
+  console.log(`🎯 Parameters:`, JSON.stringify(parameters));
+  console.log(`🎯 Output Contexts:`, outputContexts.map(ctx => ctx.name));
+  console.log(`🎯 ================================================`);
   
   try {
     switch (intentName) {
       case 'Ask_All_Attractions':
-        console.log('📋 Handling: All Attractions');
+        console.log('📋 SWITCH: Handling All Attractions');
         return await handleAllAttractionsWithContext(sessionId, outputContexts);
       
       case 'Ask_Natural_Attractions':
-        console.log('🌿 Handling: Natural Attractions');
+        console.log('🌿 SWITCH: Handling Natural Attractions');
         return await handleNaturalAttractionsWithContext(sessionId, outputContexts);
       
       case 'Ask_Cultural_Attractions':
-        console.log('🎭 Handling: Cultural Attractions');
+        console.log('🎭 SWITCH: Handling Cultural Attractions');
         return await handleCulturalAttractionsWithContext(sessionId, outputContexts);
       
       case 'Ask_Historical_Attractions':
-        console.log('🏛️ Handling: Historical Attractions');
+        console.log('🏛️ SWITCH: Handling Historical Attractions');
         return await handleHistoricalAttractionsWithContext(sessionId, outputContexts);
       
       case 'Ask_Artificial_Attractions':
-        console.log('🏗️ Handling: Artificial Attractions');
+        console.log('🏗️ SWITCH: Handling Artificial Attractions');
         return await handleArtificialAttractionsWithContext(sessionId, outputContexts);
       
       case 'Ask_Attractions_By_City':
         const cityName = parameters.city || parameters['geo-city'] || parameters.name;
-        console.log(`🏙️ Handling: Attractions by City - ${cityName}`);
+        console.log(`🏙️ SWITCH: Handling Attractions by City - ${cityName}`);
         return await handleAttractionsByCityWithContext(sessionId, cityName, outputContexts);
       
       case 'Pagination_ShowMore':
-        console.log('➡️ Handling: Show More (via Dialogflow context)');
-        return await handleShowMoreFromContext(sessionId, outputContexts);
+        console.log('➡️ SWITCH: Handling Show More (via Dialogflow context)');
+        console.log('➡️ CALLING handleShowMoreFromContext...');
+        const showMoreResult = await handleShowMoreFromContext(sessionId, outputContexts);
+        console.log('➡️ RESULT from handleShowMoreFromContext:', showMoreResult.fulfillmentText);
+        return showMoreResult;
       
       case 'Pagination_Decline':
-        console.log('❌ Handling: Decline More (via Dialogflow context)');
+        console.log('❌ SWITCH: Handling Decline More (via Dialogflow context)');
         return await handleDeclineFromContext(sessionId);
       
       case 'Default Welcome Intent':
-        console.log('👋 Handling: Welcome');
+        console.log('👋 SWITCH: Handling Welcome');
         return {
-          fulfillmentText: fulfillmentText || "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions."
+          fulfillmentText: fulfillmentText || "Welcome to Draa-Tafilalet Tourism Assistant!"
         };
       
       default:
-        console.log(`❓ Unknown intent: ${intentName}`);
+        console.log(`❓ SWITCH: Unknown intent: ${intentName}`);
         return {
           fulfillmentText: fulfillmentText || `I understand you're asking about "${intentName}", but I'm not sure how to help with that.`
         };
     }
   } catch (error) {
-    console.error(`❌ Error processing intent ${intentName}:`, error);
+    console.error(`❌ ERROR in processDialogflowResponse for intent ${intentName}:`, error);
     return {
       fulfillmentText: "Sorry, there was an error processing your request."
     };
   }
 }
-
 // ✅ NOUVELLES FONCTIONS: Handlers avec support des contexts Dialogflow
 
 async function handleAllAttractionsWithContext(sessionId, outputContexts) {
@@ -639,39 +646,56 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
 
 // ✅ HANDLERS POUR LES INTENTS DE PAGINATION
 async function handleShowMoreFromContext(sessionId, outputContexts) {
-  console.log('📄 Handling show more from Dialogflow context');
+  console.log('📄 ========== HANDLE SHOW MORE FROM CONTEXT ==========');
   console.log(`🔍 Session ID: ${sessionId}`);
+  console.log(`🔍 Output Contexts:`, outputContexts.map(ctx => ctx.name));
   
-  // ✅ CORRECTION: Récupérer les données AVANT de les supprimer
+  // Vérifier TOUS les sessionStorage
+  console.log('📊 ALL SESSIONS IN STORAGE:');
+  const allSessions = Array.from(sessionStorage.entries());
+  allSessions.forEach(([key, value]) => {
+    console.log(`  - Session ${key}: hasRemaining=${!!value.remainingAttractions}, count=${value.remainingAttractions?.length || 0}`);
+  });
+  
+  // Récupérer les données pour CE sessionId
+  console.log(`🔍 LOOKING FOR SESSION: ${sessionId}`);
   const sessionData = getSessionData(sessionId);
   
   console.log(`📊 Session data found:`, sessionData ? 'YES' : 'NO');
   if (sessionData) {
+    console.log(`📊 Full session data:`, JSON.stringify(sessionData, null, 2));
     console.log(`📊 Remaining attractions count:`, sessionData.remainingAttractions?.length || 0);
     console.log(`📊 Category:`, sessionData.category);
     console.log(`📊 Has waitingForMoreResponse:`, sessionData.waitingForMoreResponse);
+  } else {
+    console.log(`❌ NO SESSION DATA FOUND FOR ${sessionId}`);
+    console.log(`❌ Available sessions: ${Array.from(sessionStorage.keys()).join(', ')}`);
   }
   
-  // ✅ Vérifier QU'ON A bien les données
+  // Vérifier qu'on a bien les données
   if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
-    console.log('❌ No pagination data found in session');
+    console.log('❌ RETURNING ERROR: No pagination data found');
     return {
       fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
     };
   }
 
-  // ✅ EXTRAIRE les données AVANT de nettoyer
+  // Extraire les données
   const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
   
-  console.log(`✅ Found ${remainingAttractions.length} remaining attractions for category: ${category}`);
+  console.log(`✅ SUCCESS: Found ${remainingAttractions.length} remaining attractions for category: ${category}`);
+  console.log(`✅ Sample attraction:`, remainingAttractions[0]?.name || 'none');
   
-  // ✅ MAINTENANT on peut nettoyer la session
+  // Nettoyer la session
   console.log('🧹 Cleaning session data after extracting');
   sessionStorage.delete(sessionId);
 
   const naturalResponse = cityName 
     ? `Perfect! Here are all the remaining attractions in ${cityName}:`
     : `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`;
+
+  console.log(`✅ RETURNING SUCCESS with ${remainingAttractions.length} attractions`);
+  console.log('📄 ===============================================');
 
   return {
     fulfillmentText: naturalResponse,
