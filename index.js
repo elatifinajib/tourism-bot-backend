@@ -148,6 +148,417 @@ async function handleDialogflowIntent(intentName, sessionId, parameters = {}) {
   }
 }
 
+// ✅ Ajoutez ces fonctions dans votre index.js APRÈS la fonction handleDialogflowIntent
+
+// Handler functions avec pagination
+async function handleAllAttractions(sessionId) {
+  try {
+    console.log('🏛️ Fetching all attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const allAttractions = response.data;
+    console.log(`✅ ${allAttractions.length} attractions fetched`);
+
+    if (!allAttractions || allAttractions.length === 0) {
+      return {
+        fulfillmentText: "I'm sorry, but I couldn't find any attractions at the moment. Please try again later."
+      };
+    }
+
+    return handlePaginatedResponse(allAttractions, 'all', 'general', sessionId);
+
+  } catch (error) {
+    console.error('❌ Error fetching all attractions:', error.message);
+    return {
+      fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
+    };
+  }
+}
+
+async function handleNaturalAttractions(sessionId) {
+  try {
+    console.log('🌿 Fetching natural attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/NaturalAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const allAttractions = response.data;
+    console.log(`✅ ${allAttractions.length} natural attractions fetched`);
+
+    if (!allAttractions || allAttractions.length === 0) {
+      return {
+        fulfillmentText: "I couldn't find any natural attractions right now. Please try again later."
+      };
+    }
+
+    return handlePaginatedResponse(allAttractions, 'natural', 'natural', sessionId);
+
+  } catch (error) {
+    console.error('❌ Error fetching natural attractions:', error.message);
+    return {
+      fulfillmentText: "I'm having trouble finding natural attractions at the moment. Please try again later."
+    };
+  }
+}
+
+async function handleCulturalAttractions(sessionId) {
+  try {
+    console.log('🎭 Fetching cultural attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/CulturalAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const allAttractions = response.data;
+    console.log(`✅ ${allAttractions.length} cultural attractions fetched`);
+
+    if (!allAttractions || allAttractions.length === 0) {
+      return {
+        fulfillmentText: "No cultural attractions are currently available."
+      };
+    }
+
+    return handlePaginatedResponse(allAttractions, 'cultural', 'cultural', sessionId);
+
+  } catch (error) {
+    console.error('❌ Error fetching cultural attractions:', error.message);
+    return {
+      fulfillmentText: "I'm currently unable to retrieve cultural attractions. Please try again shortly."
+    };
+  }
+}
+
+async function handleHistoricalAttractions(sessionId) {
+  try {
+    console.log('🏛️ Fetching historical attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/HistoricalAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const allAttractions = response.data;
+    console.log(`✅ ${allAttractions.length} historical attractions fetched`);
+
+    if (!allAttractions || allAttractions.length === 0) {
+      return {
+        fulfillmentText: "No historical attractions are currently available."
+      };
+    }
+
+    return handlePaginatedResponse(allAttractions, 'historical', 'historical', sessionId);
+
+  } catch (error) {
+    console.error('❌ Error fetching historical attractions:', error.message);
+    return {
+      fulfillmentText: "I'm having difficulty accessing historical attractions right now. Please try again later."
+    };
+  }
+}
+
+async function handleArtificialAttractions(sessionId) {
+  try {
+    console.log('🏗️ Fetching artificial attractions...');
+    
+    const response = await axios.get(`${API_BASE_URL}/api/public/ArtificialAttractions`, {
+      timeout: 15000,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const allAttractions = response.data;
+    console.log(`✅ ${allAttractions.length} artificial attractions fetched`);
+
+    if (!allAttractions || allAttractions.length === 0) {
+      return {
+        fulfillmentText: "No artificial attractions are currently available."
+      };
+    }
+
+    return handlePaginatedResponse(allAttractions, 'artificial', 'artificial', sessionId);
+
+  } catch (error) {
+    console.error('❌ Error fetching artificial attractions:', error.message);
+    return {
+      fulfillmentText: "I'm currently unable to access artificial attractions. Please try again shortly."
+    };
+  }
+}
+
+// Handler pour attractions par ville
+async function handleAttractionsByCity(sessionId, cityName) {
+  try {
+    if (!cityName) {
+      return {
+        fulfillmentText: "I'd be happy to show you attractions in a specific city! Could you please tell me which city in Draa-Tafilalet you're interested in? For example: Errachidia, Midelt, Tinghir, Zagora, or any other city."
+      };
+    }
+
+    console.log(`🏙️ Fetching attractions for city: ${cityName}`);
+    
+    const cityResult = await tryMultipleCityVariants(cityName);
+
+    console.log(`📊 City search result:`, {
+      success: cityResult.success,
+      totalFound: cityResult.totalFound,
+      usedVariant: cityResult.usedVariant
+    });
+
+    if (!cityResult.success) {
+      console.log(`❌ No results found for any variant of: ${cityName}`);
+      return {
+        fulfillmentText: `I couldn't find any information about "${cityName}". Please make sure you've spelled the city name correctly, or try asking about another city in Draa-Tafilalet like Errachidia, Midelt, Tinghir, or Zagora.`
+      };
+    }
+
+    const allLocations = cityResult.data;
+    const usedVariant = cityResult.usedVariant;
+    
+    console.log(`📍 ${allLocations.length} total locations fetched for city variants`);
+
+    // Filtrer pour ne garder que les attractions
+    const attractions = allLocations.filter(location => {
+      const hasEntryFre = location.hasOwnProperty('entryFre');
+      const hasGuideToursAvailable = location.hasOwnProperty('guideToursAvailable');
+      return hasEntryFre && hasGuideToursAvailable;
+    });
+
+    console.log(`🎯 ${attractions.length} attractions filtered from ${allLocations.length} locations`);
+
+    if (!attractions || attractions.length === 0) {
+      console.log(`⚠️ No attractions found, but found ${allLocations.length} other locations`);
+      return {
+        fulfillmentText: `I found ${allLocations.length} locations in ${cityName}, but no tourist attractions are currently available. Try asking about another city in Draa-Tafilalet, or ask about attractions by category (natural, cultural, historical, or artificial attractions).`
+      };
+    }
+
+    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+    console.log(`✅ Returning ${attractions.length} attractions for ${formattedCityName}`);
+    
+    return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
+
+  } catch (error) {
+    console.error(`❌ Error in handleAttractionsByCity for ${cityName}:`, error);
+    return {
+      fulfillmentText: `I'm having trouble finding attractions in ${cityName} right now. Please try again later or ask about attractions in another city.`
+    };
+  }
+}
+
+// Fonction pour tenter plusieurs variantes de la ville
+async function tryMultipleCityVariants(cityName) {
+  const variants = [
+    cityName,
+    cityName.toLowerCase(),
+    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(),
+    cityName.toUpperCase(),
+  ];
+
+  const uniqueVariants = [...new Set(variants)];
+  
+  console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
+
+  let allResults = [];
+  let successfulVariant = null;
+
+  for (const variant of uniqueVariants) {
+    try {
+      console.log(`🌍 Trying city variant: ${variant}`);
+      
+      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`, {
+        timeout: 15000,
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.data && response.data.length > 0) {
+        console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
+        
+        const newResults = response.data.filter(newItem => 
+          !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
+        );
+        
+        allResults = [...allResults, ...newResults];
+        successfulVariant = variant;
+        
+        console.log(`📊 Total results so far: ${allResults.length}`);
+      }
+    } catch (error) {
+      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
+      continue;
+    }
+  }
+
+  if (allResults.length > 0) {
+    return {
+      success: true,
+      data: allResults,
+      usedVariant: successfulVariant,
+      totalFound: allResults.length
+    };
+  }
+
+  return {
+    success: false,
+    data: null,
+    usedVariant: null,
+    totalFound: 0
+  };
+}
+
+// Fonction principale de pagination
+function handlePaginatedResponse(allAttractions, category, categoryDisplayName, sessionId, cityName = null) {
+  const ITEMS_PER_PAGE = 10;
+  const totalCount = allAttractions.length;
+  
+  if (totalCount <= ITEMS_PER_PAGE) {
+    // Moins de 10 attractions, afficher toutes sans pagination
+    const messagesByCategory = {
+      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet for you!\n\nHere are all the incredible places you can explore:`,
+      'natural': `I found ${totalCount} beautiful natural attractions in Draa-Tafilalet!\n\nHere are all the stunning landscapes and protected natural areas you can discover:`,
+      'cultural': `I found ${totalCount} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are all the amazing cultural sites that showcase our rich heritage:`,
+      'historical': `I found ${totalCount} remarkable historical attractions in Draa-Tafilalet!\n\nHere are all the incredible historical sites where you can explore our fascinating history:`,
+      'artificial': `I found ${totalCount} impressive artificial attractions in Draa-Tafilalet!\n\nHere are all the amazing modern marvels and architectural wonders you can visit:`
+    };
+
+    let displayMessage;
+    if (cityName) {
+      displayMessage = `I found ${totalCount} wonderful attractions in ${cityName}!\n\nHere are all the amazing places you can visit in this beautiful city:`;
+    } else {
+      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+    }
+
+    return {
+      fulfillmentText: displayMessage,
+      
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: category,
+          data: {
+            attractions: allAttractions,
+            count: totalCount,
+            cityName: cityName
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+  } else {
+    // Plus de 10 attractions, pagination nécessaire
+    const firstPageAttractions = allAttractions.slice(0, ITEMS_PER_PAGE);
+    const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
+    const remainingCount = remainingAttractions.length;
+    
+    // Sauvegarder les attractions restantes dans la session
+    saveSessionData(sessionId, {
+      remainingAttractions,
+      category,
+      categoryDisplayName,
+      waitingForMoreResponse: true,
+      cityName: cityName
+    });
+
+    const messagesByCategory = {
+      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet for you!\n\nHere are the first ${ITEMS_PER_PAGE} incredible places you can explore:`,
+      'natural': `I found ${totalCount} beautiful natural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} stunning landscapes you can discover:`,
+      'cultural': `I found ${totalCount} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing cultural sites:`,
+      'historical': `I found ${totalCount} remarkable historical attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} incredible historical sites:`,
+      'artificial': `I found ${totalCount} impressive artificial attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing modern marvels:`
+    };
+
+    let displayMessage;
+    if (cityName) {
+      displayMessage = `I found ${totalCount} wonderful attractions in ${cityName}!\n\nHere are the first ${ITEMS_PER_PAGE} amazing places you can visit:`;
+    } else {
+      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+    }
+
+    return {
+      fulfillmentText: displayMessage,
+      
+      payload: {
+        flutter: {
+          type: 'attractions_list_with_more',
+          category: category,
+          data: {
+            attractions: firstPageAttractions,
+            count: firstPageAttractions.length,
+            hasMore: true,
+            totalCount: totalCount,
+            remainingCount: remainingCount,
+            cityName: cityName,
+            sendMoreMessage: true
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get_directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+  }
+}
+
+// Handler pour "voir plus"
+async function handleShowMore(sessionId) {
+  const sessionData = getSessionData(sessionId);
+  
+  if (!sessionData || !sessionData.remainingAttractions) {
+    return {
+      fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
+    };
+  }
+
+  const { remainingAttractions, category, categoryDisplayName } = sessionData;
+  
+  // Nettoyer la session
+  sessionStorage.delete(sessionId);
+
+  const naturalResponse = `Perfect! Here are all the remaining ${categoryDisplayName} attractions:\n\nEnjoy exploring these additional gems!`;
+
+  return {
+    fulfillmentText: naturalResponse,
+    
+    payload: {
+      flutter: {
+        type: 'attractions_list',
+        category: category,
+        data: {
+          attractions: remainingAttractions,
+          count: remainingAttractions.length,
+        },
+        actions: [
+          { type: 'view_details', label: 'View Details', icon: 'info' },
+          { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+          { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+        ]
+      }
+    }
+  };
+}
+
+// Handler pour refus
+function handleDecline(sessionId) {
+  // Nettoyer la session
+  if (sessionId) {
+    sessionStorage.delete(sessionId);
+  }
+  
+  return {
+    fulfillmentText: "As you wish! No problem at all. I'm here anytime you need help discovering attractions in Draa-Tafilalet. Just ask me whenever you're ready! 😊"
+  };
+}
 // ✅ Toutes les autres fonctions restent identiques
 // (handleAllAttractions, handleNaturalAttractions, etc.)
 
