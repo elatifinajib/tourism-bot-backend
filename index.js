@@ -175,77 +175,63 @@ function handleDecline(sessionId) {
 
 // Fonction pour gérer les intents réguliers
 async function handleRegularIntent(intentName, sessionId, parameters = {}) {
-  try {
-    console.log(`🎯 Processing intent: ${intentName} with parameters:`, parameters);
-
-    switch (intentName) {
-      case 'Ask_All_Attractions':
-        return await handleAllAttractions(sessionId);
-      
-      case 'Ask_Natural_Attractions':
-        return await handleNaturalAttractions(sessionId);
-      
-      case 'Ask_Cultural_Attractions':
-        return await handleCulturalAttractions(sessionId);
-      
-      case 'Ask_Historical_Attractions':
-        return await handleHistoricalAttractions(sessionId);
-      
-      case 'Ask_Artificial_Attractions':
-        return await handleArtificialAttractions(sessionId);
-      
-      case 'Ask_Attractions_By_City':
-        const cityName = parameters.city || parameters['geo-city'] || extractCityFromParameters(parameters);
-        console.log(`🏙️ City extracted: ${cityName}`);
-        return await handleAttractionsByCity(sessionId, cityName);
-      
-      case 'Default Welcome Intent':
-        return {
-          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, artificial attractions, or attractions in a specific city."
-        };
-      
-      default:
-        return {
-          fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', 'artificial attractions', or attractions in a specific city like 'attractions in Errachidia'."
-        };
-    }
-  } catch (error) {
-    console.error('❌ Error in handleRegularIntent:', error);
-    return {
-      fulfillmentText: "I apologize, but I'm experiencing technical difficulties. Please try again in a moment."
-    };
+  switch (intentName) {
+    case 'Ask_All_Attractions':
+      return await handleAllAttractions(sessionId);
+    
+    case 'Ask_Natural_Attractions':
+      return await handleNaturalAttractions(sessionId);
+    
+    case 'Ask_Cultural_Attractions':
+      return await handleCulturalAttractions(sessionId);
+    
+    case 'Ask_Historical_Attractions':
+      return await handleHistoricalAttractions(sessionId);
+    
+    case 'Ask_Artificial_Attractions':
+      return await handleArtificialAttractions(sessionId);
+    
+    case 'Ask_Attractions_By_City':
+      const cityName = parameters.city || parameters['geo-city'] || extractCityFromParameters(parameters);
+      console.log(`🏙️ City extracted: ${cityName}`);
+      return await handleAttractionsByCity(sessionId, cityName);
+    
+    case 'Default Welcome Intent':
+      return {
+        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, artificial attractions, or attractions in a specific city."
+      };
+    
+    default:
+      return {
+        fulfillmentText: "I can help you discover attractions in Draa-Tafilalet! Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', 'artificial attractions', or attractions in a specific city like 'attractions in Errachidia'."
+      };
   }
 }
 
-// Fonction pour extraire le nom de ville des paramètres
+// 🆕 Fonction pour extraire le nom de ville des paramètres
 function extractCityFromParameters(parameters) {
-  // Dialogflow peut envoyer la ville sous différents formats
   if (parameters.city) return parameters.city;
   if (parameters['geo-city']) return parameters['geo-city'];
   if (parameters.location) return parameters.location;
   
-  // Chercher dans tous les paramètres
   for (const [key, value] of Object.entries(parameters)) {
     if (typeof value === 'string' && value.length > 0) {
       return value;
     }
   }
-  
   return null;
 }
 
 // 🆕 Fonction pour tenter plusieurs variantes de la ville (gestion de la casse)
 async function tryMultipleCityVariants(cityName) {
   const variants = [
-    cityName, // tel quel
-    cityName.toLowerCase(), // tout en minuscules
-    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(), // Première lettre majuscule
-    cityName.toUpperCase(), // tout en majuscules
+    cityName,
+    cityName.toLowerCase(),
+    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(),
+    cityName.toUpperCase(),
   ];
 
-  // Supprimer les doublons
   const uniqueVariants = [...new Set(variants)];
-  
   console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
 
   for (const variant of uniqueVariants) {
@@ -267,7 +253,7 @@ async function tryMultipleCityVariants(cityName) {
       }
     } catch (error) {
       console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue; // Essayer la variante suivante
+      continue;
     }
   }
 
@@ -419,7 +405,7 @@ async function handleArtificialAttractions(sessionId) {
   }
 }
 
-// 🆕 NOUVEAU: Handler pour attractions par ville (corrigé avec gestion de la casse)
+// 🆕 Handler pour attractions par ville
 async function handleAttractionsByCity(sessionId, cityName) {
   try {
     if (!cityName) {
@@ -430,7 +416,6 @@ async function handleAttractionsByCity(sessionId, cityName) {
 
     console.log(`🏙️ Fetching attractions for city: ${cityName}`);
     
-    // 🔄 Essayer plusieurs variantes de la ville
     const cityResult = await tryMultipleCityVariants(cityName);
 
     if (!cityResult.success) {
@@ -459,14 +444,11 @@ async function handleAttractionsByCity(sessionId, cityName) {
       };
     }
 
-    // Capitaliser le nom de la ville pour l'affichage
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-
     return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
 
   } catch (error) {
     console.error(`❌ Error in handleAttractionsByCity for ${cityName}:`, error);
-    
     return {
       fulfillmentText: `I'm having trouble finding attractions in ${cityName} right now. Please try again later or ask about attractions in another city.`
     };
@@ -562,12 +544,11 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
             totalCount: totalCount,
             remainingCount: remainingCount,
             cityName: cityName,
-            // Signal pour Flutter d'envoyer automatiquement le message "voir plus"
             sendMoreMessage: true
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'get_directions', label: 'Get_directions', icon: 'directions' },
             { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
           ]
         }
