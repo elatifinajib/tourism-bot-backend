@@ -1303,6 +1303,32 @@ app.use((error, req, res, next) => {
   });
 });
 
+// ✅ Endpoint de debug pour voir le sessionStorage
+app.get('/debug-sessions', (req, res) => {
+  const allSessions = Array.from(sessionStorage.entries());
+  res.json({
+    totalSessions: allSessions.length,
+    sessions: allSessions.map(([key, value]) => ({
+      sessionId: key,
+      hasRemainingAttractions: !!value.remainingAttractions,
+      remainingCount: value.remainingAttractions?.length || 0,
+      category: value.category,
+      categoryDisplayName: value.categoryDisplayName,
+      waitingForMoreResponse: value.waitingForMoreResponse,
+      timestamp: new Date(value.timestamp).toISOString()
+    }))
+  });
+});
+
+// ✅ Endpoint pour vider le sessionStorage (si besoin)
+app.get('/clear-sessions', (req, res) => {
+  const count = sessionStorage.size;
+  sessionStorage.clear();
+  res.json({
+    message: `Cleared ${count} sessions`
+  });
+});
+
 // Initialiser Google Auth au démarrage et démarrer le serveur
 initializeGoogleAuth().then(() => {
   app.listen(PORT, () => {
