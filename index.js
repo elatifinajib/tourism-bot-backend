@@ -225,14 +225,19 @@ function extractCityFromParameters(parameters) {
 // 🆕 Fonction pour tenter plusieurs variantes de la ville (gestion de la casse)
 async function tryMultipleCityVariants(cityName) {
   const variants = [
-    cityName,
-    cityName.toLowerCase(),
-    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(),
-    cityName.toUpperCase(),
+    cityName, // tel quel
+    cityName.toLowerCase(), // tout en minuscules  
+    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(), // Première lettre majuscule
+    cityName.toUpperCase(), // tout en majuscules
   ];
 
+  // Supprimer les doublons
   const uniqueVariants = [...new Set(variants)];
+  
   console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
+
+  let allResults = []; // Pour regrouper tous les résultats
+  let successfulVariant = null;
 
   for (const variant of uniqueVariants) {
     try {
@@ -245,22 +250,37 @@ async function tryMultipleCityVariants(cityName) {
 
       if (response.data && response.data.length > 0) {
         console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
-        return {
-          success: true,
-          data: response.data,
-          usedVariant: variant
-        };
+        
+        // Ajouter les résultats à la liste (éviter les doublons)
+        const newResults = response.data.filter(newItem => 
+          !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
+        );
+        
+        allResults = [...allResults, ...newResults];
+        successfulVariant = variant;
+        
+        console.log(`📊 Total results so far: ${allResults.length}`);
       }
     } catch (error) {
       console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue;
+      continue; // Essayer la variante suivante
     }
+  }
+
+  if (allResults.length > 0) {
+    return {
+      success: true,
+      data: allResults,
+      usedVariant: successfulVariant,
+      totalFound: allResults.length
+    };
   }
 
   return {
     success: false,
     data: null,
-    usedVariant: null
+    usedVariant: null,
+    totalFound: 0
   };
 }
 
@@ -268,17 +288,11 @@ async function tryMultipleCityVariants(cityName) {
 async function handleAllAttractions(sessionId) {
   try {
     console.log('🏛️ Fetching all attractions...');
-    console.log('🔗 URL:', `${API_BASE_URL}/api/public/getAll/Attraction`);
     
     const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
       timeout: 15000,
       headers: { 'Content-Type': 'application/json' }
     });
-
-    console.log('📊 Response status:', response.status);
-    console.log('📊 Response data type:', typeof response.data);
-    console.log('📊 Response data length:', response.data?.length);
-    console.log('📊 First item:', response.data?.[0]);
 
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} attractions fetched`);
@@ -293,8 +307,6 @@ async function handleAllAttractions(sessionId) {
 
   } catch (error) {
     console.error('❌ Error fetching all attractions:', error.message);
-    console.error('❌ Error details:', error.response?.data);
-    console.error('❌ Error status:', error.response?.status);
     return {
       fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
     };
@@ -304,15 +316,11 @@ async function handleAllAttractions(sessionId) {
 async function handleNaturalAttractions(sessionId) {
   try {
     console.log('🌿 Fetching natural attractions...');
-    console.log('🔗 URL:', `${API_BASE_URL}/api/public/NaturalAttractions`);
     
     const response = await axios.get(`${API_BASE_URL}/api/public/NaturalAttractions`, {
       timeout: 15000,
       headers: { 'Content-Type': 'application/json' }
     });
-
-    console.log('📊 Natural - Response status:', response.status);
-    console.log('📊 Natural - Response data length:', response.data?.length);
 
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} natural attractions fetched`);
@@ -327,13 +335,12 @@ async function handleNaturalAttractions(sessionId) {
 
   } catch (error) {
     console.error('❌ Error fetching natural attractions:', error.message);
-    console.error('❌ Error details:', error.response?.data);
-    console.error('❌ Error status:', error.response?.status);
     return {
       fulfillmentText: "I'm having trouble finding natural attractions at the moment. Please try again later."
     };
   }
 }
+
 async function handleCulturalAttractions(sessionId) {
   try {
     console.log('🎭 Fetching cultural attractions...');
@@ -431,6 +438,12 @@ async function handleAttractionsByCity(sessionId, cityName) {
     
     const cityResult = await tryMultipleCityVariants(cityName);
 
+    console.log(`📊 City search result:`, {
+      success: cityResult.success,
+      totalFound: cityResult.totalFound,
+      usedVariant: cityResult.usedVariant
+    });
+
     if (!cityResult.success) {
       console.log(`❌ No results found for any variant of: ${cityName}`);
       return {
@@ -441,27 +454,36 @@ async function handleAttractionsByCity(sessionId, cityName) {
     const allLocations = cityResult.data;
     const usedVariant = cityResult.usedVariant;
     
-    console.log(`📍 ${allLocations.length} locations fetched for ${usedVariant}`);
+    console.log(`📍 ${allLocations.length} total locations fetched for city variants`);
+    console.log(`🔍 Sample location structure:`, allLocations[0]);
 
     // Filtrer pour ne garder que les attractions (qui ont entryFre et guideToursAvailable)
-    const attractions = allLocations.filter(location => 
-      location.hasOwnProperty('entryFre') && 
-      location.hasOwnProperty('guideToursAvailable')
-    );
+    const attractions = allLocations.filter(location => {
+      const hasEntryFre = location.hasOwnProperty('entryFre');
+      const hasGuideToursAvailable = location.hasOwnProperty('guideToursAvailable');
+      
+      console.log(`🔍 Location "${location.name}": entryFre=${hasEntryFre}, guideToursAvailable=${hasGuideToursAvailable}`);
+      
+      return hasEntryFre && hasGuideToursAvailable;
+    });
 
     console.log(`🎯 ${attractions.length} attractions filtered from ${allLocations.length} locations`);
 
     if (!attractions || attractions.length === 0) {
+      console.log(`⚠️ No attractions found, but found ${allLocations.length} other locations`);
       return {
-        fulfillmentText: `I found some locations in ${cityName}, but no tourist attractions are currently available. Try asking about another city in Draa-Tafilalet, or ask about attractions by category (natural, cultural, historical, or artificial attractions).`
+        fulfillmentText: `I found ${allLocations.length} locations in ${cityName}, but no tourist attractions are currently available. Try asking about another city in Draa-Tafilalet, or ask about attractions by category (natural, cultural, historical, or artificial attractions).`
       };
     }
 
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+    console.log(`✅ Returning ${attractions.length} attractions for ${formattedCityName}`);
+    
     return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
 
   } catch (error) {
     console.error(`❌ Error in handleAttractionsByCity for ${cityName}:`, error);
+    console.error(`❌ Error stack:`, error.stack);
     return {
       fulfillmentText: `I'm having trouble finding attractions in ${cityName} right now. Please try again later or ask about attractions in another city.`
     };
