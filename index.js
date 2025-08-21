@@ -575,18 +575,25 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
       }
     };
   } else {
-    // Pagination nécessaire - stocker dans le context Dialogflow
+    // Pagination nécessaire
     const firstPageAttractions = allAttractions.slice(0, ITEMS_PER_PAGE);
     const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingAttractions.length;
     
-    // ✅ STOCKER LES DONNÉES DANS LE SESSION STORAGE TEMPORAIREMENT
-    // (En attendant de tout migrer vers les contexts Dialogflow)
+    // ✅ CORRECTION: Sauvegarder avec une clé plus persistante
+    const paginationKey = `pagination_${sessionId}_${Date.now()}`;
+    
+    console.log(`💾 Saving pagination data for session ${sessionId}`);
+    console.log(`📊 Remaining attractions count: ${remainingAttractions.length}`);
+    
+    // Sauvegarder les données de pagination
     saveSessionData(sessionId, {
       remainingAttractions,
       category,
       categoryDisplayName,
-      cityName: cityName
+      cityName: cityName,
+      waitingForMoreResponse: true, // ✅ Ajouter ce flag
+      paginationKey: paginationKey
     });
 
     const messagesByCategory = {
@@ -625,9 +632,7 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
             { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
           ]
         }
-      },
-      // ✅ DIALOGFLOW CONTEXT SERA AUTOMATIQUEMENT AJOUTÉ
-      outputContexts: outputContexts
+      }
     };
   }
 }
@@ -635,23 +640,38 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
 // ✅ HANDLERS POUR LES INTENTS DE PAGINATION
 async function handleShowMoreFromContext(sessionId, outputContexts) {
   console.log('📄 Handling show more from Dialogflow context');
+  console.log(`🔍 Session ID: ${sessionId}`);
   
-  // Récupérer les données depuis notre session storage temporaire
+  // Récupérer les données depuis notre session storage
   const sessionData = getSessionData(sessionId);
   
-  if (!sessionData || !sessionData.remainingAttractions) {
+  console.log(`📊 Session data found:`, sessionData ? 'YES' : 'NO');
+  if (sessionData) {
+    console.log(`📊 Remaining attractions count:`, sessionData.remainingAttractions?.length || 0);
+    console.log(`📊 Category:`, sessionData.category);
+    console.log(`📊 Has waitingForMoreResponse:`, sessionData.waitingForMoreResponse);
+  }
+  
+  if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
+    console.log('❌ No pagination data found in session');
     return {
-      fulfillmentText: "I don't have any additional attractions to show right now."
+      fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
     };
   }
 
-  const { remainingAttractions, category, categoryDisplayName } = sessionData;
+  const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
   
-  // Nettoyer la session
+  console.log(`✅ Found ${remainingAttractions.length} remaining attractions`);
+  
+  // Nettoyer la session après utilisation
   sessionStorage.delete(sessionId);
 
+  const naturalResponse = cityName 
+    ? `Perfect! Here are all the remaining attractions in ${cityName}:`
+    : `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`;
+
   return {
-    fulfillmentText: `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`,
+    fulfillmentText: naturalResponse,
     payload: {
       flutter: {
         type: 'attractions_list',
@@ -659,6 +679,7 @@ async function handleShowMoreFromContext(sessionId, outputContexts) {
         data: {
           attractions: remainingAttractions,
           count: remainingAttractions.length,
+          cityName: cityName
         },
         actions: [
           { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -672,12 +693,17 @@ async function handleShowMoreFromContext(sessionId, outputContexts) {
 
 async function handleDeclineFromContext(sessionId) {
   console.log('❌ Handling decline from Dialogflow context');
+  console.log(`🔍 Session ID: ${sessionId}`);
   
   // Nettoyer la session
-  sessionStorage.delete(sessionId);
+  const sessionData = getSessionData(sessionId);
+  if (sessionData) {
+    console.log('🧹 Cleaning session data');
+    sessionStorage.delete(sessionId);
+  }
   
   return {
-    fulfillmentText: "No problem! I'm here whenever you need help discovering attractions in Draa-Tafilalet. 😊"
+    fulfillmentText: "No problem! I'm here whenever you need help discovering attractions in Draa-Tafilalet. Just ask me anytime! 😊"
   };
 }
 // 🔥 Webhook Dialogflow - pour les appels directs de Dialogflow
@@ -1239,16 +1265,33 @@ function isUserDeclining(queryText) {
 }
 
 function saveSessionData(sessionId, data) {
-  sessionStorage.set(sessionId, { ...sessionStorage.get(sessionId), ...data, timestamp: Date.now() });
+  const existingData = sessionStorage.get(sessionId);
+  const newData = { ...existingData, ...data, timestamp: Date.now() };
+  
+  console.log(`💾 Saving session data for ${sessionId}:`);
+  console.log(`📊 Data keys: ${Object.keys(newData).join(', ')}`);
+  console.log(`📊 Remaining attractions: ${newData.remainingAttractions?.length || 0}`);
+  
+  sessionStorage.set(sessionId, newData);
 }
 
 function getSessionData(sessionId) {
   const data = sessionStorage.get(sessionId);
-  // Nettoyer les sessions anciennes (plus de 30 minutes)
-  if (data && Date.now() - data.timestamp > 30 * 60 * 1000) {
-    sessionStorage.delete(sessionId);
-    return null;
+  
+  console.log(`🔍 Getting session data for ${sessionId}:`);
+  console.log(`📊 Data found: ${data ? 'YES' : 'NO'}`);
+  
+  if (data) {
+    // Nettoyer les sessions anciennes (plus de 30 minutes)
+    if (Date.now() - data.timestamp > 30 * 60 * 1000) {
+      console.log(`🧹 Session expired, cleaning up`);
+      sessionStorage.delete(sessionId);
+      return null;
+    }
+    
+    console.log(`📊 Session valid, remaining attractions: ${data.remainingAttractions?.length || 0}`);
   }
+  
   return data;
 }
 
