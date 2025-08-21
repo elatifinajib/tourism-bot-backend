@@ -1,4 +1,4 @@
-// index.js - Version modifiée pour webhook Dialogflow
+// index.js - Code complet avec intégration Dialogflow
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -17,15 +17,129 @@ const API_BASE_URL = 'https://touristeproject.onrender.com';
 // Session storage pour gérer le flux de pagination
 const sessionStorage = new Map();
 
+// 🔑 Configuration Google Cloud
+const PROJECT_ID = process.env.DIALOGFLOW_PROJECT_ID || 'tourisme-bot-sxin';
+
+// Configuration des credentials Google
+let googleAuth = null;
+let cachedToken = null;
+let tokenExpiry = null;
+
+// Initialiser Google Auth
+async function initializeGoogleAuth() {
+  try {
+    console.log('🔑 Initializing Google Auth...');
+    
+    // Option A : Utiliser JSON depuis variable d'environnement
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+      const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+      
+      const { GoogleAuth } = require('google-auth-library');
+      googleAuth = new GoogleAuth({
+        credentials: credentials,
+        scopes: ['https://www.googleapis.com/auth/dialogflow'],
+      });
+      
+      console.log('✅ Google Auth initialized with JSON credentials');
+    }
+    // Option B : Utiliser fichier
+    else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      const { GoogleAuth } = require('google-auth-library');
+      googleAuth = new GoogleAuth({
+        keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+        scopes: ['https://www.googleapis.com/auth/dialogflow'],
+      });
+      
+      console.log('✅ Google Auth initialized with file credentials');
+    }
+    else {
+      console.warn('⚠️ No Google credentials configured - using fallback mode');
+    }
+  } catch (error) {
+    console.error('❌ Error initializing Google Auth:', error);
+  }
+}
+
+// Fonction pour obtenir un token d'accès
+async function getGoogleAccessToken() {
+  try {
+    if (!googleAuth) {
+      throw new Error('Google Auth not initialized');
+    }
+
+    // Vérifier si on a un token valide en cache
+    if (cachedToken && tokenExpiry && Date.now() < tokenExpiry - 300000) { // 5 min de marge
+      console.log('✅ Using cached Google token');
+      return cachedToken;
+    }
+
+    console.log('🔄 Getting fresh Google token...');
+    const client = await googleAuth.getClient();
+    const tokenResponse = await client.getAccessToken();
+
+    if (tokenResponse.token) {
+      cachedToken = tokenResponse.token;
+      tokenExpiry = tokenResponse.expiry_date;
+      
+      console.log('✅ New Google token obtained');
+      console.log(`⏰ Token expires at: ${new Date(tokenExpiry)}`);
+      
+      return tokenResponse.token;
+    } else {
+      throw new Error('Failed to obtain access token');
+    }
+  } catch (error) {
+    console.error('❌ Error getting Google token:', error);
+    throw error;
+  }
+}
+
+// Fonction utilitaire pour appels API avec retry
+async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 API call attempt ${attempt}/${maxRetries} to: ${url}`);
+      
+      const response = await axios.get(url, {
+        timeout: timeoutMs,
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Tourism-Bot/1.0'
+        }
+      });
+
+      console.log(`✅ API call successful on attempt ${attempt}`);
+      return response;
+      
+    } catch (error) {
+      console.log(`❌ API call attempt ${attempt} failed: ${error.message}`);
+      
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+      console.log(`⏳ Waiting ${delayMs}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 // Health check
 app.get('/', (req, res) => {
   res.json({
-    message: '🚀 Tourism Bot Backend with Dialogflow is running!',
+    message: '🚀 Tourism Bot Backend with REAL Dialogflow is running!',
     timestamp: new Date().toISOString(),
+    dialogflowConfigured: !!googleAuth,
+    projectId: PROJECT_ID,
     endpoints: {
       webhook: '/webhook (Dialogflow)',
+      dialogflowProxy: '/dialogflow-proxy (Flutter)',
       health: '/',
-      test: '/test'
+      test: '/test',
+      dialogflowToken: '/get-dialogflow-token',
+      testDialogflow: '/test-dialogflow-api',
+      checkConfig: '/check-dialogflow-config'
     }
   });
 });
@@ -33,9 +147,7 @@ app.get('/', (req, res) => {
 // Test endpoint
 app.get('/test', async (req, res) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
-      timeout: 10000
-    });
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
     res.json({
       message: '✅ Connection to Tourism API successful',
       attractionsCount: response.data.length,
@@ -49,12 +161,169 @@ app.get('/test', async (req, res) => {
   }
 });
 
-// 🔥 Webhook Dialogflow - NOUVELLE VERSION
+// 🔑 Endpoint pour obtenir l'access token Dialogflow
+app.get('/get-dialogflow-token', async (req, res) => {
+  try {
+    console.log('🔑 Request for Dialogflow access token...');
+
+    const token = await getGoogleAccessToken();
+    
+    res.json({
+      access_token: token,
+      expires_in: Math.floor((tokenExpiry - Date.now()) / 1000),
+      token_type: 'Bearer',
+      project_id: PROJECT_ID
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting Dialogflow token:', error);
+    res.status(500).json({
+      error: 'Failed to obtain Dialogflow access token',
+      message: error.message
+    });
+  }
+});
+
+// 🧪 Endpoint pour tester l'API Dialogflow directement
+app.get('/test-dialogflow-api', async (req, res) => {
+  try {
+    console.log('🧪 Testing direct Dialogflow API call...');
+
+    const token = await getGoogleAccessToken();
+    
+    const sessionPath = `projects/${PROJECT_ID}/agent/sessions/test-session`;
+    const detectIntentUrl = `https://dialogflow.googleapis.com/v2/${sessionPath}:detectIntent`;
+
+    const testPayload = {
+      queryInput: {
+        text: {
+          text: 'hello',
+          languageCode: 'en-US',
+        }
+      }
+    };
+
+    const response = await axios.post(detectIntentUrl, testPayload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      timeout: 15000
+    });
+
+    res.json({
+      success: true,
+      message: '✅ Dialogflow API test successful!',
+      intent: response.data.queryResult.intent.displayName,
+      fulfillmentText: response.data.queryResult.fulfillmentText,
+      confidence: response.data.queryResult.intentDetectionConfidence,
+      projectId: PROJECT_ID
+    });
+
+  } catch (error) {
+    console.error('❌ Dialogflow API test failed:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ Dialogflow API test failed',
+      error: error.message,
+      details: error.response?.data || 'No additional details'
+    });
+  }
+});
+
+// 📝 Endpoint pour vérifier la configuration
+app.get('/check-dialogflow-config', (req, res) => {
+  res.json({
+    projectId: PROJECT_ID,
+    googleAuthInitialized: !!googleAuth,
+    credentialsConfigured: !!(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS),
+    tokenCached: !!cachedToken,
+    tokenExpiry: tokenExpiry ? new Date(tokenExpiry).toISOString() : null,
+    environment: {
+      hasCredentialsJson: !!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
+      hasCredentialsFile: !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      projectIdSet: !!process.env.DIALOGFLOW_PROJECT_ID
+    }
+  });
+});
+
+// 🔄 Endpoint proxy simple pour Dialogflow depuis Flutter
+app.post('/dialogflow-proxy', async (req, res) => {
+  try {
+    const { message, sessionId } = req.body;
+    
+    console.log(`🔄 Proxy request from Flutter: "${message}" (session: ${sessionId})`);
+    
+    // Si on a configuré Google Auth, utiliser la vraie API Dialogflow
+    if (googleAuth) {
+      try {
+        const token = await getGoogleAccessToken();
+        
+        const sessionPath = `projects/${PROJECT_ID}/agent/sessions/${sessionId}`;
+        const detectIntentUrl = `https://dialogflow.googleapis.com/v2/${sessionPath}:detectIntent`;
+
+        const dialogflowPayload = {
+          queryInput: {
+            text: {
+              text: message,
+              languageCode: 'en-US',
+            }
+          }
+        };
+
+        const dialogflowResponse = await axios.post(detectIntentUrl, dialogflowPayload, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          timeout: 15000
+        });
+
+        const queryResult = dialogflowResponse.data.queryResult;
+        const intentName = queryResult.intent.displayName;
+        const parameters = queryResult.parameters || {};
+        
+        console.log(`✅ Dialogflow API response: ${intentName}`);
+        
+        // Si c'est un intent complexe, traiter via nos handlers
+        if (_needsComplexResponse(intentName)) {
+          const complexResponse = await handleDialogflowIntent(intentName, sessionId, parameters);
+          return res.json(complexResponse);
+        } else {
+          // Réponse simple de Dialogflow
+          return res.json({
+            fulfillmentText: queryResult.fulfillmentText || 'I understand, but I\'m not sure how to help with that.'
+          });
+        }
+        
+      } catch (dialogflowError) {
+        console.error('❌ Dialogflow API error:', dialogflowError.message);
+        // Fallback vers la simulation
+      }
+    }
+    
+    // Fallback : Simuler Dialogflow avec notre logique locale
+    console.log('📋 Using local intent detection fallback');
+    
+    const simulatedIntent = _detectIntentLocally(message);
+    const simulatedParameters = _extractParametersLocally(message);
+    
+    const response = await handleDialogflowIntent(simulatedIntent, sessionId, simulatedParameters);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ Proxy error:', error);
+    res.status(500).json({
+      fulfillmentText: "Sorry, I'm experiencing technical difficulties. Please try again."
+    });
+  }
+});
+
+// 🔥 Webhook Dialogflow - pour les appels directs de Dialogflow
 app.post('/webhook', async (req, res) => {
   try {
     console.log('🎯 Dialogflow Webhook called:', JSON.stringify(req.body, null, 2));
 
-    // ✅ Extraction des données RÉELLES de Dialogflow
     const intentName = req.body.queryResult?.intent?.displayName;
     const queryText = req.body.queryResult?.queryText;
     const parameters = req.body.queryResult?.parameters || {};
@@ -65,7 +334,6 @@ app.post('/webhook', async (req, res) => {
     console.log(`📊 Dialogflow Parameters: ${JSON.stringify(parameters)}`);
     console.log(`🆔 Session ID: ${sessionId}`);
 
-    // ✅ Vérifier si c'est un intent que nous devons traiter
     if (!intentName) {
       return res.json({
         fulfillmentText: "I didn't understand that. Could you please rephrase?"
@@ -74,21 +342,17 @@ app.post('/webhook', async (req, res) => {
 
     let response = {};
 
-    // Vérifier d'abord s'il y a un état de pagination en cours
     const sessionData = getSessionData(sessionId);
     
     if (sessionData && sessionData.waitingForMoreResponse) {
-      // L'utilisateur est dans un état "voir plus"
       if (isUserWantingMore(queryText)) {
         response = await handleShowMore(sessionId);
       } else if (isUserDeclining(queryText)) {
         response = handleDecline(sessionId);
       } else {
-        // L'utilisateur dit autre chose, on traite la nouvelle demande
         response = await handleDialogflowIntent(intentName, sessionId, parameters);
       }
     } else {
-      // Flux normal sans pagination en cours
       response = await handleDialogflowIntent(intentName, sessionId, parameters);
     }
 
@@ -102,6 +366,62 @@ app.post('/webhook', async (req, res) => {
     });
   }
 });
+
+// Fonction helper pour détecter si on a besoin d'une réponse complexe
+function _needsComplexResponse(intentName) {
+  const complexIntents = [
+    'Ask_All_Attractions',
+    'Ask_Natural_Attractions',
+    'Ask_Cultural_Attractions',
+    'Ask_Historical_Attractions',
+    'Ask_Artificial_Attractions',
+    'Ask_Attractions_By_City'
+  ];
+  return complexIntents.includes(intentName);
+}
+
+// Fonction helper pour détecter l'intent localement (fallback)
+function _detectIntentLocally(message) {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('all attractions') || lowerMessage.includes('best attractions')) {
+    return 'Ask_All_Attractions';
+  }
+  if (lowerMessage.includes('natural')) {
+    return 'Ask_Natural_Attractions';
+  }
+  if (lowerMessage.includes('cultural')) {
+    return 'Ask_Cultural_Attractions';
+  }
+  if (lowerMessage.includes('historical') || lowerMessage.includes('history')) {
+    return 'Ask_Historical_Attractions';
+  }
+  if (lowerMessage.includes('artificial')) {
+    return 'Ask_Artificial_Attractions';
+  }
+  
+  // Vérifier les villes
+  const cities = ['errachidia', 'midelt', 'tinghir', 'zagora', 'ouarzazate'];
+  if (cities.some(city => lowerMessage.includes(city))) {
+    return 'Ask_Attractions_By_City';
+  }
+  
+  return 'Default Welcome Intent';
+}
+
+// Fonction helper pour extraire les paramètres localement
+function _extractParametersLocally(message) {
+  const lowerMessage = message.toLowerCase();
+  const cities = ['errachidia', 'midelt', 'tinghir', 'zagora', 'ouarzazate'];
+  
+  for (const city of cities) {
+    if (lowerMessage.includes(city)) {
+      return { city: city, name: city };
+    }
+  }
+  
+  return {};
+}
 
 // 🆕 Fonction pour gérer les intents Dialogflow
 async function handleDialogflowIntent(intentName, sessionId, parameters = {}) {
@@ -129,7 +449,6 @@ async function handleDialogflowIntent(intentName, sessionId, parameters = {}) {
       return await handleArtificialAttractions(sessionId);
     
     case 'Ask_Attractions_By_City':
-      // ✅ Extraction du paramètre city de Dialogflow
       const cityName = parameters.city || parameters['geo-city'] || parameters.name;
       console.log(`🏙️ Handling: Attractions by City - ${cityName}`);
       return await handleAttractionsByCity(sessionId, cityName);
@@ -148,24 +467,18 @@ async function handleDialogflowIntent(intentName, sessionId, parameters = {}) {
   }
 }
 
-// ✅ Ajoutez ces fonctions dans votre index.js APRÈS la fonction handleDialogflowIntent
-
 // Handler functions avec pagination
 async function handleAllAttractions(sessionId) {
   try {
     console.log('🏛️ Fetching all attractions...');
     
-    const response = await axios.get(`${API_BASE_URL}/api/public/getAll/Attraction`, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
     const allAttractions = response.data;
-    console.log(`✅ ${allAttractions.length} attractions fetched`);
+    console.log(`✅ ${allAttractions.length} attractions fetched successfully`);
 
     if (!allAttractions || allAttractions.length === 0) {
       return {
-        fulfillmentText: "I'm sorry, but I couldn't find any attractions at the moment. Please try again later."
+        fulfillmentText: "I'm sorry, but I couldn't find any attractions at the moment. The database might be empty or temporarily unavailable."
       };
     }
 
@@ -173,9 +486,20 @@ async function handleAllAttractions(sessionId) {
 
   } catch (error) {
     console.error('❌ Error fetching all attractions:', error.message);
-    return {
-      fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
-    };
+    
+    if (error.code === 'ECONNABORTED') {
+      return {
+        fulfillmentText: "The attractions database is taking longer than usual to respond. This might be because the server is starting up. Please try again in a minute."
+      };
+    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return {
+        fulfillmentText: "I'm unable to connect to the attractions database right now. Please try again later."
+      };
+    } else {
+      return {
+        fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
+      };
+    }
   }
 }
 
@@ -183,11 +507,7 @@ async function handleNaturalAttractions(sessionId) {
   try {
     console.log('🌿 Fetching natural attractions...');
     
-    const response = await axios.get(`${API_BASE_URL}/api/public/NaturalAttractions`, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/NaturalAttractions`);
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} natural attractions fetched`);
 
@@ -211,11 +531,7 @@ async function handleCulturalAttractions(sessionId) {
   try {
     console.log('🎭 Fetching cultural attractions...');
     
-    const response = await axios.get(`${API_BASE_URL}/api/public/CulturalAttractions`, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/CulturalAttractions`);
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} cultural attractions fetched`);
 
@@ -239,11 +555,7 @@ async function handleHistoricalAttractions(sessionId) {
   try {
     console.log('🏛️ Fetching historical attractions...');
     
-    const response = await axios.get(`${API_BASE_URL}/api/public/HistoricalAttractions`, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/HistoricalAttractions`);
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} historical attractions fetched`);
 
@@ -267,11 +579,7 @@ async function handleArtificialAttractions(sessionId) {
   try {
     console.log('🏗️ Fetching artificial attractions...');
     
-    const response = await axios.get(`${API_BASE_URL}/api/public/ArtificialAttractions`, {
-      timeout: 15000,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/ArtificialAttractions`);
     const allAttractions = response.data;
     console.log(`✅ ${allAttractions.length} artificial attractions fetched`);
 
@@ -371,10 +679,9 @@ async function tryMultipleCityVariants(cityName) {
     try {
       console.log(`🌍 Trying city variant: ${variant}`);
       
-      const response = await axios.get(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const response = await makeApiCall(
+        `${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`
+      );
 
       if (response.data && response.data.length > 0) {
         console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
@@ -394,20 +701,11 @@ async function tryMultipleCityVariants(cityName) {
     }
   }
 
-  if (allResults.length > 0) {
-    return {
-      success: true,
-      data: allResults,
-      usedVariant: successfulVariant,
-      totalFound: allResults.length
-    };
-  }
-
   return {
-    success: false,
-    data: null,
-    usedVariant: null,
-    totalFound: 0
+    success: allResults.length > 0,
+    data: allResults.length > 0 ? allResults : null,
+    usedVariant: successfulVariant,
+    totalFound: allResults.length
   };
 }
 
@@ -559,10 +857,8 @@ function handleDecline(sessionId) {
     fulfillmentText: "As you wish! No problem at all. I'm here anytime you need help discovering attractions in Draa-Tafilalet. Just ask me whenever you're ready! 😊"
   };
 }
-// ✅ Toutes les autres fonctions restent identiques
-// (handleAllAttractions, handleNaturalAttractions, etc.)
 
-// Fonctions utilitaires (inchangées)
+// Fonctions utilitaires
 function extractSessionId(sessionPath) {
   return sessionPath ? sessionPath.split('/').pop() : 'default-session';
 }
@@ -595,27 +891,6 @@ function getSessionData(sessionId) {
   return data;
 }
 
-// 🆕 Nouveau endpoint pour tester l'intégration Dialogflow
-app.get('/test-dialogflow', (req, res) => {
-  res.json({
-    message: '✅ Dialogflow Webhook endpoint is ready!',
-    timestamp: new Date().toISOString(),
-    supportedIntents: [
-      'Ask_All_Attractions',
-      'Ask_Natural_Attractions', 
-      'Ask_Cultural_Attractions',
-      'Ask_Historical_Attractions',
-      'Ask_Artificial_Attractions',
-      'Ask_Attractions_By_City'
-    ],
-    webhookUrl: 'https://tourism-bot-backend-production.up.railway.app/webhook'
-  });
-});
-
-// Toutes les autres fonctions handler restent identiques
-// (handleAllAttractions, handleNaturalAttractions, handleCulturalAttractions, etc.)
-// ... [Copiez le reste du code depuis votre fichier actuel]
-
 // Global error handler
 app.use((error, req, res, next) => {
   console.error('❌ Global error:', error);
@@ -624,12 +899,34 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Tourism Bot Backend with Dialogflow started on port ${PORT}`);
-  console.log(`📱 Dialogflow Webhook URL: https://tourism-bot-backend-production.up.railway.app/webhook`);
-  console.log(`🏛️ Tourism API: ${API_BASE_URL}`);
-  console.log('✅ Ready to handle REAL Dialogflow requests!');
+// Initialiser Google Auth au démarrage et démarrer le serveur
+initializeGoogleAuth().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Tourism Bot Backend with REAL Dialogflow started on port ${PORT}`);
+    console.log(`📱 Dialogflow Webhook URL: https://tourism-bot-backend-production.up.railway.app/webhook`);
+    console.log(`🔄 Flutter Proxy URL: https://tourism-bot-backend-production.up.railway.app/dialogflow-proxy`);
+    console.log(`🏛️ Tourism API: ${API_BASE_URL}`);
+    console.log(`🔑 Google Auth initialized: ${!!googleAuth}`);
+    console.log(`📋 Project ID: ${PROJECT_ID}`);
+    console.log('✅ Ready to handle REAL Dialogflow requests!');
+    console.log('');
+    console.log('📋 Available endpoints:');
+    console.log('  GET  / - Health check');
+    console.log('  GET  /test - Test Tourism API');
+    console.log('  GET  /check-dialogflow-config - Check Dialogflow configuration');
+    console.log('  GET  /test-dialogflow-api - Test Dialogflow API directly');
+    console.log('  GET  /get-dialogflow-token - Get Dialogflow access token');
+    console.log('  POST /webhook - Dialogflow webhook');
+    console.log('  POST /dialogflow-proxy - Flutter proxy to Dialogflow');
+  });
+}).catch(error => {
+  console.error('❌ Failed to initialize:', error);
+  // Démarrer quand même le serveur en mode fallback
+  app.listen(PORT, () => {
+    console.log(`⚠️ Tourism Bot Backend started in FALLBACK mode on port ${PORT}`);
+    console.log(`❌ Google Auth failed to initialize: ${error.message}`);
+    console.log(`🔄 Using local intent detection only`);
+  });
 });
 
 module.exports = app;
