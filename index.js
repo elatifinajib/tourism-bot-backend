@@ -1,4 +1,3 @@
-// index.js - Code complet avec intégration Dialogflow
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -11,79 +10,67 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// API Base URL
+// Configuration
 const API_BASE_URL = 'https://touristeproject.onrender.com';
-
-// Session storage pour gérer le flux de pagination
-const sessionStorage = new Map();
-
-// 🔑 Configuration Google Cloud
 const PROJECT_ID = process.env.DIALOGFLOW_PROJECT_ID || 'tourisme-bot-sxin';
 
-// Configuration des credentials Google
+// Session storage pour la pagination
+const sessionStorage = new Map();
+
+// Google Auth
 let googleAuth = null;
 let cachedToken = null;
 let tokenExpiry = null;
 
-// Initialiser Google Auth
+// ============================
+// GOOGLE AUTHENTICATION
+// ============================
+
 async function initializeGoogleAuth() {
   try {
     console.log('🔑 Initializing Google Auth...');
     
-    // Option A : Utiliser JSON depuis variable d'environnement
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
       const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-      
       const { GoogleAuth } = require('google-auth-library');
       googleAuth = new GoogleAuth({
         credentials: credentials,
         scopes: ['https://www.googleapis.com/auth/dialogflow'],
       });
-      
       console.log('✅ Google Auth initialized with JSON credentials');
     }
-    // Option B : Utiliser fichier
     else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       const { GoogleAuth } = require('google-auth-library');
       googleAuth = new GoogleAuth({
         keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
         scopes: ['https://www.googleapis.com/auth/dialogflow'],
       });
-      
       console.log('✅ Google Auth initialized with file credentials');
     }
     else {
-      console.warn('⚠️ No Google credentials configured - using fallback mode');
+      console.warn('⚠️ No Google credentials configured');
     }
   } catch (error) {
     console.error('❌ Error initializing Google Auth:', error);
   }
 }
 
-// Fonction pour obtenir un token d'accès
 async function getGoogleAccessToken() {
   try {
     if (!googleAuth) {
       throw new Error('Google Auth not initialized');
     }
 
-    // Vérifier si on a un token valide en cache
-    if (cachedToken && tokenExpiry && Date.now() < tokenExpiry - 300000) { // 5 min de marge
-      console.log('✅ Using cached Google token');
+    if (cachedToken && tokenExpiry && Date.now() < tokenExpiry - 300000) {
       return cachedToken;
     }
 
-    console.log('🔄 Getting fresh Google token...');
     const client = await googleAuth.getClient();
     const tokenResponse = await client.getAccessToken();
 
     if (tokenResponse.token) {
       cachedToken = tokenResponse.token;
       tokenExpiry = tokenResponse.expiry_date;
-      
-      console.log('✅ New Google token obtained');
-      console.log(`⏰ Token expires at: ${new Date(tokenExpiry)}`);
-      
       return tokenResponse.token;
     } else {
       throw new Error('Failed to obtain access token');
@@ -94,12 +81,13 @@ async function getGoogleAccessToken() {
   }
 }
 
-// Fonction utilitaire pour appels API avec retry
+// ============================
+// UTILITY FUNCTIONS
+// ============================
+
 async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`🔄 API call attempt ${attempt}/${maxRetries} to: ${url}`);
-      
       const response = await axios.get(url, {
         timeout: timeoutMs,
         headers: { 
@@ -107,286 +95,202 @@ async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
           'User-Agent': 'Tourism-Bot/1.0'
         }
       });
-
-      console.log(`✅ API call successful on attempt ${attempt}`);
       return response;
-      
     } catch (error) {
-      console.log(`❌ API call attempt ${attempt} failed: ${error.message}`);
-      
-      if (attempt === maxRetries) {
-        throw error;
-      }
+      if (attempt === maxRetries) throw error;
       
       const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-      console.log(`⏳ Waiting ${delayMs}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
 }
 
-// Health check
+async function tryMultipleCityVariants(cityName) {
+  const variants = [
+    cityName,
+    cityName.toLowerCase(),
+    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(),
+    cityName.toUpperCase(),
+  ];
+
+  const uniqueVariants = [...new Set(variants)];
+  let allResults = [];
+  let successfulVariant = null;
+
+  for (const variant of uniqueVariants) {
+    try {
+      const response = await makeApiCall(
+        `${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`
+      );
+
+      if (response.data && response.data.length > 0) {
+        const newResults = response.data.filter(newItem => 
+          !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
+        );
+        
+        allResults = [...allResults, ...newResults];
+        successfulVariant = variant;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+
+  return {
+    success: allResults.length > 0,
+    data: allResults.length > 0 ? allResults : null,
+    usedVariant: successfulVariant,
+    totalFound: allResults.length
+  };
+}
+
+// ============================
+// SESSION MANAGEMENT
+// ============================
+
+function saveSessionData(sessionId, data) {
+  const newData = { ...data, timestamp: Date.now() };
+  sessionStorage.set(sessionId, newData);
+  console.log(`💾 Session data saved for ${sessionId}`);
+}
+
+function getSessionData(sessionId) {
+  const data = sessionStorage.get(sessionId);
+  
+  if (data) {
+    // Expire after 1 hour
+    if (Date.now() - data.timestamp > 60 * 60 * 1000) {
+      sessionStorage.delete(sessionId);
+      return null;
+    }
+  }
+  
+  return data;
+}
+
+function extractSessionId(sessionPath) {
+  return sessionPath ? sessionPath.split('/').pop() : 'default-session';
+}
+
+// ============================
+// MAIN ENDPOINTS
+// ============================
+
 app.get('/', (req, res) => {
   res.json({
-    message: '🚀 Tourism Bot Backend with REAL Dialogflow is running!',
+    message: '🚀 Tourism Bot Backend with Dialogflow',
     timestamp: new Date().toISOString(),
     dialogflowConfigured: !!googleAuth,
-    projectId: PROJECT_ID,
-    endpoints: {
-      webhook: '/webhook (Dialogflow)',
-      dialogflowProxy: '/dialogflow-proxy (Flutter)',
-      health: '/',
-      test: '/test',
-      dialogflowToken: '/get-dialogflow-token',
-      testDialogflow: '/test-dialogflow-api',
-      checkConfig: '/check-dialogflow-config'
-    }
+    projectId: PROJECT_ID
   });
 });
 
-// Test endpoint
-app.get('/test', async (req, res) => {
-  try {
-    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
-    res.json({
-      message: '✅ Connection to Tourism API successful',
-      attractionsCount: response.data.length,
-      sampleAttraction: response.data[0] || null
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: '❌ Failed to connect to Tourism API',
-      error: error.message
-    });
-  }
-});
-
-// 🔑 Endpoint pour obtenir l'access token Dialogflow
-app.get('/get-dialogflow-token', async (req, res) => {
-  try {
-    console.log('🔑 Request for Dialogflow access token...');
-
-    const token = await getGoogleAccessToken();
-    
-    res.json({
-      access_token: token,
-      expires_in: Math.floor((tokenExpiry - Date.now()) / 1000),
-      token_type: 'Bearer',
-      project_id: PROJECT_ID
-    });
-
-  } catch (error) {
-    console.error('❌ Error getting Dialogflow token:', error);
-    res.status(500).json({
-      error: 'Failed to obtain Dialogflow access token',
-      message: error.message
-    });
-  }
-});
-
-// 🧪 Endpoint pour tester l'API Dialogflow directement
-app.get('/test-dialogflow-api', async (req, res) => {
-  try {
-    console.log('🧪 Testing direct Dialogflow API call...');
-
-    const token = await getGoogleAccessToken();
-    
-    const sessionPath = `projects/${PROJECT_ID}/agent/sessions/test-session`;
-    const detectIntentUrl = `https://dialogflow.googleapis.com/v2/${sessionPath}:detectIntent`;
-
-    const testPayload = {
-      queryInput: {
-        text: {
-          text: 'hello',
-          languageCode: 'en-US',
-        }
-      }
-    };
-
-    const response = await axios.post(detectIntentUrl, testPayload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      timeout: 15000
-    });
-
-    res.json({
-      success: true,
-      message: '✅ Dialogflow API test successful!',
-      intent: response.data.queryResult.intent.displayName,
-      fulfillmentText: response.data.queryResult.fulfillmentText,
-      confidence: response.data.queryResult.intentDetectionConfidence,
-      projectId: PROJECT_ID
-    });
-
-  } catch (error) {
-    console.error('❌ Dialogflow API test failed:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ Dialogflow API test failed',
-      error: error.message,
-      details: error.response?.data || 'No additional details'
-    });
-  }
-});
-
-// 📝 Endpoint pour vérifier la configuration
-app.get('/check-dialogflow-config', (req, res) => {
-  res.json({
-    projectId: PROJECT_ID,
-    googleAuthInitialized: !!googleAuth,
-    credentialsConfigured: !!(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS),
-    tokenCached: !!cachedToken,
-    tokenExpiry: tokenExpiry ? new Date(tokenExpiry).toISOString() : null,
-    environment: {
-      hasCredentialsJson: !!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
-      hasCredentialsFile: !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
-      projectIdSet: !!process.env.DIALOGFLOW_PROJECT_ID
-    }
-  });
-});
-
-// Remplacez votre endpoint /dialogflow-proxy dans index.js par cette version
-
+// Main proxy endpoint for Flutter
 app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
+    console.log(`🔄 Processing: "${message}" (session: ${sessionId})`);
     
-    console.log(`🔄 Proxy request from Flutter: "${message}" (session: ${sessionId})`);
-    
-    // ✅ NOUVELLE APPROCHE: Toujours appeler Dialogflow d'abord
     if (googleAuth) {
-      try {
-        const token = await getGoogleAccessToken();
-        
-        const sessionPath = `projects/${PROJECT_ID}/agent/sessions/${sessionId}`;
-        const detectIntentUrl = `https://dialogflow.googleapis.com/v2/${sessionPath}:detectIntent`;
+      const token = await getGoogleAccessToken();
+      const sessionPath = `projects/${PROJECT_ID}/agent/sessions/${sessionId}`;
+      const detectIntentUrl = `https://dialogflow.googleapis.com/v2/${sessionPath}:detectIntent`;
 
-        const dialogflowPayload = {
-          queryInput: {
-            text: {
-              text: message,
-              languageCode: 'en-US',
-            }
+      const dialogflowPayload = {
+        queryInput: {
+          text: {
+            text: message,
+            languageCode: 'en-US',
           }
-        };
+        }
+      };
 
-        const dialogflowResponse = await axios.post(detectIntentUrl, dialogflowPayload, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          timeout: 15000
-        });
+      const dialogflowResponse = await axios.post(detectIntentUrl, dialogflowPayload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        timeout: 15000
+      });
 
-        const queryResult = dialogflowResponse.data.queryResult;
-        const intentName = queryResult.intent.displayName;
-        const parameters = queryResult.parameters || {};
-        const outputContexts = queryResult.outputContexts || [];
-        
-        console.log(`✅ Dialogflow API response: ${intentName}`);
-        console.log(`📊 Output contexts:`, outputContexts.map(ctx => ctx.name));
-        
-        // ✅ TRAITER LA RÉPONSE SELON L'INTENT DÉTECTÉ PAR DIALOGFLOW
-        const response = await processDialogflowResponse(queryResult, sessionId, outputContexts);
-        return res.json(response);
-        
-      } catch (dialogflowError) {
-        console.error('❌ Dialogflow API error:', dialogflowError.message);
-        return res.status(500).json({
-          fulfillmentText: "I'm having trouble connecting to Dialogflow. Please try again."
-        });
-      }
-    } else {
-      // Fallback si pas de credentials Google
-      console.log('📋 No Google Auth - using local detection');
-      const simulatedIntent = _detectIntentLocally(message);
-      const response = await handleDialogflowIntent(simulatedIntent, sessionId, {});
+      const queryResult = dialogflowResponse.data.queryResult;
+      const response = await processDialogflowResponse(queryResult, sessionId);
       return res.json(response);
+      
+    } else {
+      return res.status(500).json({
+        fulfillmentText: "Dialogflow service unavailable"
+      });
     }
     
   } catch (error) {
     console.error('❌ Proxy error:', error);
     res.status(500).json({
-      fulfillmentText: "Sorry, I'm experiencing technical difficulties. Please try again."
+      fulfillmentText: "Sorry, I'm experiencing technical difficulties."
     });
   }
 });
 
-// ✅ Version avec logs détaillés pour debug
-async function processDialogflowResponse(queryResult, sessionId, outputContexts) {
+// ============================
+// DIALOGFLOW RESPONSE PROCESSING
+// ============================
+
+async function processDialogflowResponse(queryResult, sessionId) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
-  const fulfillmentText = queryResult.fulfillmentText || '';
   
-  console.log(`🎯 ========== PROCESSING DIALOGFLOW RESPONSE ==========`);
-  console.log(`🎯 Intent Name: ${intentName}`);
-  console.log(`🎯 Session ID: ${sessionId}`);
-  console.log(`🎯 Parameters:`, JSON.stringify(parameters));
-  console.log(`🎯 Output Contexts:`, outputContexts.map(ctx => ctx.name));
-  console.log(`🎯 ================================================`);
+  console.log(`🎯 Processing intent: ${intentName}`);
   
   try {
     switch (intentName) {
       case 'Ask_All_Attractions':
-        console.log('📋 SWITCH: Handling All Attractions');
-        return await handleAllAttractionsWithContext(sessionId, outputContexts);
+        return await handleAllAttractions(sessionId);
       
       case 'Ask_Natural_Attractions':
-        console.log('🌿 SWITCH: Handling Natural Attractions');
-        return await handleNaturalAttractionsWithContext(sessionId, outputContexts);
+        return await handleNaturalAttractions(sessionId);
       
       case 'Ask_Cultural_Attractions':
-        console.log('🎭 SWITCH: Handling Cultural Attractions');
-        return await handleCulturalAttractionsWithContext(sessionId, outputContexts);
+        return await handleCulturalAttractions(sessionId);
       
       case 'Ask_Historical_Attractions':
-        console.log('🏛️ SWITCH: Handling Historical Attractions');
-        return await handleHistoricalAttractionsWithContext(sessionId, outputContexts);
+        return await handleHistoricalAttractions(sessionId);
       
       case 'Ask_Artificial_Attractions':
-        console.log('🏗️ SWITCH: Handling Artificial Attractions');
-        return await handleArtificialAttractionsWithContext(sessionId, outputContexts);
+        return await handleArtificialAttractions(sessionId);
       
       case 'Ask_Attractions_By_City':
         const cityName = parameters.city || parameters['geo-city'] || parameters.name;
-        console.log(`🏙️ SWITCH: Handling Attractions by City - ${cityName}`);
-        return await handleAttractionsByCityWithContext(sessionId, cityName, outputContexts);
+        return await handleAttractionsByCity(sessionId, cityName);
       
       case 'Pagination_ShowMore':
-        console.log('➡️ SWITCH: Handling Show More (via Dialogflow context)');
-        console.log('➡️ CALLING handleShowMoreFromContext...');
-        const showMoreResult = await handleShowMoreFromContext(sessionId, outputContexts);
-        console.log('➡️ RESULT from handleShowMoreFromContext:', showMoreResult.fulfillmentText);
-        return showMoreResult;
+        return await handleShowMore(sessionId);
       
       case 'Pagination_Decline':
-        console.log('❌ SWITCH: Handling Decline More (via Dialogflow context)');
-        return await handleDeclineFromContext(sessionId);
+        return handleDecline(sessionId);
       
       case 'Default Welcome Intent':
-        console.log('👋 SWITCH: Handling Welcome');
         return {
-          fulfillmentText: fulfillmentText || "Welcome to Draa-Tafilalet Tourism Assistant!"
+          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, cultural sites, natural wonders, and more."
         };
       
       default:
-        console.log(`❓ SWITCH: Unknown intent: ${intentName}`);
         return {
-          fulfillmentText: fulfillmentText || `I understand you're asking about "${intentName}", but I'm not sure how to help with that.`
+          fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, cultural sites, or natural wonders.`
         };
     }
   } catch (error) {
-    console.error(`❌ ERROR in processDialogflowResponse for intent ${intentName}:`, error);
+    console.error(`❌ Error processing intent ${intentName}:`, error);
     return {
       fulfillmentText: "Sorry, there was an error processing your request."
     };
   }
 }
-// ✅ NOUVELLES FONCTIONS: Handlers avec support des contexts Dialogflow
 
-async function handleAllAttractionsWithContext(sessionId, outputContexts) {
+// ============================
+// ATTRACTION HANDLERS
+// ============================
+
+async function handleAllAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
     const allAttractions = response.data;
@@ -395,20 +299,14 @@ async function handleAllAttractionsWithContext(sessionId, outputContexts) {
       return { fulfillmentText: "No attractions found at the moment." };
     }
 
-    return handlePaginatedResponseWithContext(
-      allAttractions, 
-      'all', 
-      'general', 
-      sessionId, 
-      outputContexts
-    );
+    return handlePaginatedResponse(allAttractions, 'all', 'general', sessionId);
   } catch (error) {
     console.error('❌ Error fetching all attractions:', error);
     return { fulfillmentText: "Having trouble accessing attractions database." };
   }
 }
 
-async function handleNaturalAttractionsWithContext(sessionId, outputContexts) {
+async function handleNaturalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/NaturalAttractions`);
     const allAttractions = response.data;
@@ -417,20 +315,14 @@ async function handleNaturalAttractionsWithContext(sessionId, outputContexts) {
       return { fulfillmentText: "No natural attractions found." };
     }
 
-    return handlePaginatedResponseWithContext(
-      allAttractions, 
-      'natural', 
-      'natural', 
-      sessionId, 
-      outputContexts
-    );
+    return handlePaginatedResponse(allAttractions, 'natural', 'natural', sessionId);
   } catch (error) {
     console.error('❌ Error fetching natural attractions:', error);
     return { fulfillmentText: "Having trouble finding natural attractions." };
   }
 }
 
-async function handleCulturalAttractionsWithContext(sessionId, outputContexts) {
+async function handleCulturalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/CulturalAttractions`);
     const allAttractions = response.data;
@@ -439,20 +331,14 @@ async function handleCulturalAttractionsWithContext(sessionId, outputContexts) {
       return { fulfillmentText: "No cultural attractions found." };
     }
 
-    return handlePaginatedResponseWithContext(
-      allAttractions, 
-      'cultural', 
-      'cultural', 
-      sessionId, 
-      outputContexts
-    );
+    return handlePaginatedResponse(allAttractions, 'cultural', 'cultural', sessionId);
   } catch (error) {
     console.error('❌ Error fetching cultural attractions:', error);
     return { fulfillmentText: "Having trouble finding cultural attractions." };
   }
 }
 
-async function handleHistoricalAttractionsWithContext(sessionId, outputContexts) {
+async function handleHistoricalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/HistoricalAttractions`);
     const allAttractions = response.data;
@@ -461,20 +347,14 @@ async function handleHistoricalAttractionsWithContext(sessionId, outputContexts)
       return { fulfillmentText: "No historical attractions found." };
     }
 
-    return handlePaginatedResponseWithContext(
-      allAttractions, 
-      'historical', 
-      'historical', 
-      sessionId, 
-      outputContexts
-    );
+    return handlePaginatedResponse(allAttractions, 'historical', 'historical', sessionId);
   } catch (error) {
     console.error('❌ Error fetching historical attractions:', error);
     return { fulfillmentText: "Having trouble finding historical attractions." };
   }
 }
 
-async function handleArtificialAttractionsWithContext(sessionId, outputContexts) {
+async function handleArtificialAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/ArtificialAttractions`);
     const allAttractions = response.data;
@@ -483,20 +363,14 @@ async function handleArtificialAttractionsWithContext(sessionId, outputContexts)
       return { fulfillmentText: "No artificial attractions found." };
     }
 
-    return handlePaginatedResponseWithContext(
-      allAttractions, 
-      'artificial', 
-      'artificial', 
-      sessionId, 
-      outputContexts
-    );
+    return handlePaginatedResponse(allAttractions, 'artificial', 'artificial', sessionId);
   } catch (error) {
     console.error('❌ Error fetching artificial attractions:', error);
     return { fulfillmentText: "Having trouble finding artificial attractions." };
   }
 }
 
-async function handleAttractionsByCityWithContext(sessionId, cityName, outputContexts) {
+async function handleAttractionsByCity(sessionId, cityName) {
   try {
     if (!cityName) {
       return {
@@ -524,14 +398,7 @@ async function handleAttractionsByCityWithContext(sessionId, cityName, outputCon
 
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
     
-    return handlePaginatedResponseWithContext(
-      attractions, 
-      `city_${cityName.toLowerCase()}`, 
-      `attractions in ${formattedCityName}`, 
-      sessionId, 
-      outputContexts,
-      formattedCityName
-    );
+    return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
   } catch (error) {
     console.error(`❌ Error finding attractions in ${cityName}:`, error);
     return {
@@ -540,13 +407,15 @@ async function handleAttractionsByCityWithContext(sessionId, cityName, outputCon
   }
 }
 
-// ✅ FONCTION DE PAGINATION AVEC CONTEXTS DIALOGFLOW
-function handlePaginatedResponseWithContext(allAttractions, category, categoryDisplayName, sessionId, outputContexts, cityName = null) {
+// ============================
+// PAGINATION HANDLERS
+// ============================
+
+function handlePaginatedResponse(allAttractions, category, categoryDisplayName, sessionId, cityName = null) {
   const ITEMS_PER_PAGE = 10;
   const totalCount = allAttractions.length;
   
   if (totalCount <= ITEMS_PER_PAGE) {
-    // Pas de pagination nécessaire
     const messagesByCategory = {
       'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet!`,
       'natural': `I found ${totalCount} beautiful natural attractions!`,
@@ -582,25 +451,16 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
       }
     };
   } else {
-    // Pagination nécessaire
     const firstPageAttractions = allAttractions.slice(0, ITEMS_PER_PAGE);
     const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingAttractions.length;
     
-    // ✅ CORRECTION: Sauvegarder avec une clé plus persistante
-    const paginationKey = `pagination_${sessionId}_${Date.now()}`;
-    
-    console.log(`💾 Saving pagination data for session ${sessionId}`);
-    console.log(`📊 Remaining attractions count: ${remainingAttractions.length}`);
-    
-    // Sauvegarder les données de pagination
     saveSessionData(sessionId, {
       remainingAttractions,
       category,
       categoryDisplayName,
       cityName: cityName,
-      waitingForMoreResponse: true, // ✅ Ajouter ce flag
-      paginationKey: paginationKey
+      waitingForMoreResponse: true
     });
 
     const messagesByCategory = {
@@ -644,604 +504,25 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
   }
 }
 
-// ✅ HANDLERS POUR LES INTENTS DE PAGINATION
-async function handleShowMoreFromContext(sessionId, outputContexts) {
-  console.log('📄 ========== HANDLE SHOW MORE FROM CONTEXT ==========');
-  console.log(`🔍 Session ID: ${sessionId}`);
-  
-  try {
-    // ✅ CORRECTION: Récupérer directement depuis le Map sans passer par getSessionData
-    console.log('📊 ALL SESSIONS IN STORAGE:');
-    const allSessions = Array.from(sessionStorage.entries());
-    allSessions.forEach(([key, value]) => {
-      console.log(`  - Session ${key}: hasRemaining=${!!value.remainingAttractions}, count=${value.remainingAttractions?.length || 0}`);
-    });
-    
-    // ✅ Récupération DIRECTE sans vérification d'expiration
-    const sessionData = sessionStorage.get(sessionId);
-    
-    console.log(`📊 Direct session data found:`, sessionData ? 'YES' : 'NO');
-    if (sessionData) {
-      console.log(`📊 Remaining attractions count:`, sessionData.remainingAttractions?.length || 0);
-      console.log(`📊 Category:`, sessionData.category);
-      console.log(`📊 Timestamp:`, new Date(sessionData.timestamp).toISOString());
-      console.log(`📊 Age in minutes:`, (Date.now() - sessionData.timestamp) / 60000);
-    }
-    
-    // Vérifier qu'on a bien les données
-    if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
-      console.log('❌ RETURNING ERROR: No pagination data found');
-      return {
-        fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
-      };
-    }
-
-    // Extraire les données
-    const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
-    
-    console.log(`✅ SUCCESS: Found ${remainingAttractions.length} remaining attractions for category: ${category}`);
-    
-    // ✅ Nettoyer la session APRÈS extraction réussie
-    console.log('🧹 Cleaning session data after successful extraction');
-    sessionStorage.delete(sessionId);
-
-    const naturalResponse = cityName 
-      ? `Perfect! Here are all the remaining attractions in ${cityName}:`
-      : `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`;
-
-    console.log(`✅ RETURNING SUCCESS with ${remainingAttractions.length} attractions`);
-
-    return {
-      fulfillmentText: naturalResponse,
-      payload: {
-        flutter: {
-          type: 'attractions_list',
-          category: category,
-          data: {
-            attractions: remainingAttractions,
-            count: remainingAttractions.length,
-            cityName: cityName
-          },
-          actions: [
-            { type: 'view_details', label: 'View Details', icon: 'info' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-          ]
-        }
-      }
-    };
-  } catch (error) {
-    console.error('❌ ERROR in handleShowMoreFromContext:', error);
-    return {
-      fulfillmentText: "Sorry, there was an error showing more attractions."
-    };
-  }
-}
-
-async function handleDeclineFromContext(sessionId) {
-  console.log('❌ Handling decline from Dialogflow context');
-  console.log(`🔍 Session ID: ${sessionId}`);
-  
-  // Nettoyer la session
-  const sessionData = getSessionData(sessionId);
-  if (sessionData) {
-    console.log('🧹 Cleaning session data');
-    sessionStorage.delete(sessionId);
-  }
-  
-  return {
-    fulfillmentText: "No problem! I'm here whenever you need help discovering attractions in Draa-Tafilalet. Just ask me anytime! 😊"
-  };
-}
-// 🔥 Webhook Dialogflow - pour les appels directs de Dialogflow
-app.post('/webhook', async (req, res) => {
-  try {
-    console.log('🎯 Dialogflow Webhook called:', JSON.stringify(req.body, null, 2));
-
-    const intentName = req.body.queryResult?.intent?.displayName;
-    const queryText = req.body.queryResult?.queryText;
-    const parameters = req.body.queryResult?.parameters || {};
-    const sessionId = extractSessionId(req.body.session);
-
-    console.log(`🔍 Dialogflow Intent: ${intentName}`);
-    console.log(`💬 User message: ${queryText}`);
-    console.log(`📊 Dialogflow Parameters: ${JSON.stringify(parameters)}`);
-    console.log(`🆔 Session ID: ${sessionId}`);
-
-    if (!intentName) {
-      return res.json({
-        fulfillmentText: "I didn't understand that. Could you please rephrase?"
-      });
-    }
-
-    let response = {};
-
-    const sessionData = getSessionData(sessionId);
-    
-    if (sessionData && sessionData.waitingForMoreResponse) {
-      if (isUserWantingMore(queryText)) {
-        response = await handleShowMore(sessionId);
-      } else if (isUserDeclining(queryText)) {
-        response = handleDecline(sessionId);
-      } else {
-        response = await handleDialogflowIntent(intentName, sessionId, parameters);
-      }
-    } else {
-      response = await handleDialogflowIntent(intentName, sessionId, parameters);
-    }
-
-    console.log('📤 Response sent to Dialogflow:', JSON.stringify(response, null, 2));
-    res.json(response);
-
-  } catch (error) {
-    console.error('❌ Dialogflow Webhook error:', error);
-    res.status(500).json({
-      fulfillmentText: "Sorry, I'm experiencing technical difficulties. Please try again in a moment."
-    });
-  }
-});
-
-// Fonction helper pour détecter si on a besoin d'une réponse complexe
-function _needsComplexResponse(intentName) {
-  const complexIntents = [
-    'Ask_All_Attractions',
-    'Ask_Natural_Attractions',
-    'Ask_Cultural_Attractions',
-    'Ask_Historical_Attractions',
-    'Ask_Artificial_Attractions',
-    'Ask_Attractions_By_City'
-  ];
-  return complexIntents.includes(intentName);
-}
-
-// Fonction helper pour détecter l'intent localement (fallback)
-function _detectIntentLocally(message) {
-  const lowerMessage = message.toLowerCase();
-
-  if (lowerMessage.includes('all attractions') || lowerMessage.includes('best attractions')) {
-    return 'Ask_All_Attractions';
-  }
-  if (lowerMessage.includes('natural')) {
-    return 'Ask_Natural_Attractions';
-  }
-  if (lowerMessage.includes('cultural')) {
-    return 'Ask_Cultural_Attractions';
-  }
-  if (lowerMessage.includes('historical') || lowerMessage.includes('history')) {
-    return 'Ask_Historical_Attractions';
-  }
-  if (lowerMessage.includes('artificial')) {
-    return 'Ask_Artificial_Attractions';
-  }
-  
-  // Vérifier les villes
-  const cities = ['errachidia', 'midelt', 'tinghir', 'zagora', 'ouarzazate'];
-  if (cities.some(city => lowerMessage.includes(city))) {
-    return 'Ask_Attractions_By_City';
-  }
-  
-  return 'Default Welcome Intent';
-}
-
-// Fonction helper pour extraire les paramètres localement
-function _extractParametersLocally(message) {
-  const lowerMessage = message.toLowerCase();
-  const cities = ['errachidia', 'midelt', 'tinghir', 'zagora', 'ouarzazate'];
-  
-  for (const city of cities) {
-    if (lowerMessage.includes(city)) {
-      return { city: city, name: city };
-    }
-  }
-  
-  return {};
-}
-
-// 🆕 Fonction pour gérer les intents Dialogflow
-async function handleDialogflowIntent(intentName, sessionId, parameters = {}) {
-  console.log(`🎯 Processing Dialogflow intent: ${intentName}`);
-  
-  switch (intentName) {
-    case 'Ask_All_Attractions':
-      console.log('📋 SWITCH: Handling All Attractions');
-  return await handleAllAttractionsWithContextMock(sessionId, outputContexts);
-    
-    case 'Ask_Natural_Attractions':
-      console.log('🌿 Handling: Natural Attractions');
-      return await handleNaturalAttractions(sessionId);
-    
-    case 'Ask_Cultural_Attractions':
-      console.log('🎭 Handling: Cultural Attractions');
-      return await handleCulturalAttractions(sessionId);
-    
-    case 'Ask_Historical_Attractions':
-      console.log('🏛️ Handling: Historical Attractions');
-      return await handleHistoricalAttractions(sessionId);
-    
-    case 'Ask_Artificial_Attractions':
-      console.log('🏗️ Handling: Artificial Attractions');
-      return await handleArtificialAttractions(sessionId);
-    
-    case 'Ask_Attractions_By_City':
-      const cityName = parameters.city || parameters['geo-city'] || parameters.name;
-      console.log(`🏙️ Handling: Attractions by City - ${cityName}`);
-      return await handleAttractionsByCity(sessionId, cityName);
-    
-    case 'Default Welcome Intent':
-      console.log('👋 Handling: Welcome');
-      return {
-        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I'm here to help you discover amazing attractions. You can ask me about all attractions, natural sites, cultural landmarks, historical places, artificial attractions, or attractions in a specific city."
-      };
-    
-    default:
-      console.log(`❓ Unknown intent: ${intentName}`);
-      return {
-        fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about 'all attractions', 'natural attractions', 'cultural sites', 'historical places', 'artificial attractions', or attractions in a specific city like 'attractions in Errachidia'.`
-      };
-  }
-}
-
-// Handler functions avec pagination
-async function handleAllAttractions(sessionId) {
-  try {
-    console.log('🏛️ Fetching all attractions...');
-    
-    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
-    const allAttractions = response.data;
-    console.log(`✅ ${allAttractions.length} attractions fetched successfully`);
-
-    if (!allAttractions || allAttractions.length === 0) {
-      return {
-        fulfillmentText: "I'm sorry, but I couldn't find any attractions at the moment. The database might be empty or temporarily unavailable."
-      };
-    }
-
-    return handlePaginatedResponse(allAttractions, 'all', 'general', sessionId);
-
-  } catch (error) {
-    console.error('❌ Error fetching all attractions:', error.message);
-    
-    if (error.code === 'ECONNABORTED') {
-      return {
-        fulfillmentText: "The attractions database is taking longer than usual to respond. This might be because the server is starting up. Please try again in a minute."
-      };
-    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return {
-        fulfillmentText: "I'm unable to connect to the attractions database right now. Please try again later."
-      };
-    } else {
-      return {
-        fulfillmentText: "I apologize, but I'm having trouble accessing the attractions database right now. Please try again in a few moments."
-      };
-    }
-  }
-}
-
-async function handleNaturalAttractions(sessionId) {
-  try {
-    console.log('🌿 Fetching natural attractions...');
-    
-    const response = await makeApiCall(`${API_BASE_URL}/api/public/NaturalAttractions`);
-    const allAttractions = response.data;
-    console.log(`✅ ${allAttractions.length} natural attractions fetched`);
-
-    if (!allAttractions || allAttractions.length === 0) {
-      return {
-        fulfillmentText: "I couldn't find any natural attractions right now. Please try again later."
-      };
-    }
-
-    return handlePaginatedResponse(allAttractions, 'natural', 'natural', sessionId);
-
-  } catch (error) {
-    console.error('❌ Error fetching natural attractions:', error.message);
-    return {
-      fulfillmentText: "I'm having trouble finding natural attractions at the moment. Please try again later."
-    };
-  }
-}
-
-async function handleCulturalAttractions(sessionId) {
-  try {
-    console.log('🎭 Fetching cultural attractions...');
-    
-    const response = await makeApiCall(`${API_BASE_URL}/api/public/CulturalAttractions`);
-    const allAttractions = response.data;
-    console.log(`✅ ${allAttractions.length} cultural attractions fetched`);
-
-    if (!allAttractions || allAttractions.length === 0) {
-      return {
-        fulfillmentText: "No cultural attractions are currently available."
-      };
-    }
-
-    return handlePaginatedResponse(allAttractions, 'cultural', 'cultural', sessionId);
-
-  } catch (error) {
-    console.error('❌ Error fetching cultural attractions:', error.message);
-    return {
-      fulfillmentText: "I'm currently unable to retrieve cultural attractions. Please try again shortly."
-    };
-  }
-}
-
-async function handleHistoricalAttractions(sessionId) {
-  try {
-    console.log('🏛️ Fetching historical attractions...');
-    
-    const response = await makeApiCall(`${API_BASE_URL}/api/public/HistoricalAttractions`);
-    const allAttractions = response.data;
-    console.log(`✅ ${allAttractions.length} historical attractions fetched`);
-
-    if (!allAttractions || allAttractions.length === 0) {
-      return {
-        fulfillmentText: "No historical attractions are currently available."
-      };
-    }
-
-    return handlePaginatedResponse(allAttractions, 'historical', 'historical', sessionId);
-
-  } catch (error) {
-    console.error('❌ Error fetching historical attractions:', error.message);
-    return {
-      fulfillmentText: "I'm having difficulty accessing historical attractions right now. Please try again later."
-    };
-  }
-}
-
-async function handleArtificialAttractions(sessionId) {
-  try {
-    console.log('🏗️ Fetching artificial attractions...');
-    
-    const response = await makeApiCall(`${API_BASE_URL}/api/public/ArtificialAttractions`);
-    const allAttractions = response.data;
-    console.log(`✅ ${allAttractions.length} artificial attractions fetched`);
-
-    if (!allAttractions || allAttractions.length === 0) {
-      return {
-        fulfillmentText: "No artificial attractions are currently available."
-      };
-    }
-
-    return handlePaginatedResponse(allAttractions, 'artificial', 'artificial', sessionId);
-
-  } catch (error) {
-    console.error('❌ Error fetching artificial attractions:', error.message);
-    return {
-      fulfillmentText: "I'm currently unable to access artificial attractions. Please try again shortly."
-    };
-  }
-}
-
-// Handler pour attractions par ville
-async function handleAttractionsByCity(sessionId, cityName) {
-  try {
-    if (!cityName) {
-      return {
-        fulfillmentText: "I'd be happy to show you attractions in a specific city! Could you please tell me which city in Draa-Tafilalet you're interested in? For example: Errachidia, Midelt, Tinghir, Zagora, or any other city."
-      };
-    }
-
-    console.log(`🏙️ Fetching attractions for city: ${cityName}`);
-    
-    const cityResult = await tryMultipleCityVariants(cityName);
-
-    console.log(`📊 City search result:`, {
-      success: cityResult.success,
-      totalFound: cityResult.totalFound,
-      usedVariant: cityResult.usedVariant
-    });
-
-    if (!cityResult.success) {
-      console.log(`❌ No results found for any variant of: ${cityName}`);
-      return {
-        fulfillmentText: `I couldn't find any information about "${cityName}". Please make sure you've spelled the city name correctly, or try asking about another city in Draa-Tafilalet like Errachidia, Midelt, Tinghir, or Zagora.`
-      };
-    }
-
-    const allLocations = cityResult.data;
-    const usedVariant = cityResult.usedVariant;
-    
-    console.log(`📍 ${allLocations.length} total locations fetched for city variants`);
-
-    // Filtrer pour ne garder que les attractions
-    const attractions = allLocations.filter(location => {
-      const hasEntryFre = location.hasOwnProperty('entryFre');
-      const hasGuideToursAvailable = location.hasOwnProperty('guideToursAvailable');
-      return hasEntryFre && hasGuideToursAvailable;
-    });
-
-    console.log(`🎯 ${attractions.length} attractions filtered from ${allLocations.length} locations`);
-
-    if (!attractions || attractions.length === 0) {
-      console.log(`⚠️ No attractions found, but found ${allLocations.length} other locations`);
-      return {
-        fulfillmentText: `I found ${allLocations.length} locations in ${cityName}, but no tourist attractions are currently available. Try asking about another city in Draa-Tafilalet, or ask about attractions by category (natural, cultural, historical, or artificial attractions).`
-      };
-    }
-
-    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-    console.log(`✅ Returning ${attractions.length} attractions for ${formattedCityName}`);
-    
-    return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
-
-  } catch (error) {
-    console.error(`❌ Error in handleAttractionsByCity for ${cityName}:`, error);
-    return {
-      fulfillmentText: `I'm having trouble finding attractions in ${cityName} right now. Please try again later or ask about attractions in another city.`
-    };
-  }
-}
-
-// Fonction pour tenter plusieurs variantes de la ville
-async function tryMultipleCityVariants(cityName) {
-  const variants = [
-    cityName,
-    cityName.toLowerCase(),
-    cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(),
-    cityName.toUpperCase(),
-  ];
-
-  const uniqueVariants = [...new Set(variants)];
-  
-  console.log(`🔄 Trying city variants: ${uniqueVariants.join(', ')}`);
-
-  let allResults = [];
-  let successfulVariant = null;
-
-  for (const variant of uniqueVariants) {
-    try {
-      console.log(`🌍 Trying city variant: ${variant}`);
-      
-      const response = await makeApiCall(
-        `${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`
-      );
-
-      if (response.data && response.data.length > 0) {
-        console.log(`✅ Success with variant: ${variant} - Found ${response.data.length} locations`);
-        
-        const newResults = response.data.filter(newItem => 
-          !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
-        );
-        
-        allResults = [...allResults, ...newResults];
-        successfulVariant = variant;
-        
-        console.log(`📊 Total results so far: ${allResults.length}`);
-      }
-    } catch (error) {
-      console.log(`❌ Failed with variant: ${variant} - ${error.message}`);
-      continue;
-    }
-  }
-
-  return {
-    success: allResults.length > 0,
-    data: allResults.length > 0 ? allResults : null,
-    usedVariant: successfulVariant,
-    totalFound: allResults.length
-  };
-}
-
-// Fonction principale de pagination
-function handlePaginatedResponse(allAttractions, category, categoryDisplayName, sessionId, cityName = null) {
-  const ITEMS_PER_PAGE = 10;
-  const totalCount = allAttractions.length;
-  
-  if (totalCount <= ITEMS_PER_PAGE) {
-    // Moins de 10 attractions, afficher toutes sans pagination
-    const messagesByCategory = {
-      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet for you!\n\nHere are all the incredible places you can explore:`,
-      'natural': `I found ${totalCount} beautiful natural attractions in Draa-Tafilalet!\n\nHere are all the stunning landscapes and protected natural areas you can discover:`,
-      'cultural': `I found ${totalCount} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are all the amazing cultural sites that showcase our rich heritage:`,
-      'historical': `I found ${totalCount} remarkable historical attractions in Draa-Tafilalet!\n\nHere are all the incredible historical sites where you can explore our fascinating history:`,
-      'artificial': `I found ${totalCount} impressive artificial attractions in Draa-Tafilalet!\n\nHere are all the amazing modern marvels and architectural wonders you can visit:`
-    };
-
-    let displayMessage;
-    if (cityName) {
-      displayMessage = `I found ${totalCount} wonderful attractions in ${cityName}!\n\nHere are all the amazing places you can visit in this beautiful city:`;
-    } else {
-      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
-    }
-
-    return {
-      fulfillmentText: displayMessage,
-      
-      payload: {
-        flutter: {
-          type: 'attractions_list',
-          category: category,
-          data: {
-            attractions: allAttractions,
-            count: totalCount,
-            cityName: cityName
-          },
-          actions: [
-            { type: 'view_details', label: 'View Details', icon: 'info' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-          ]
-        }
-      }
-    };
-  } else {
-    // Plus de 10 attractions, pagination nécessaire
-    const firstPageAttractions = allAttractions.slice(0, ITEMS_PER_PAGE);
-    const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
-    const remainingCount = remainingAttractions.length;
-    
-    // Sauvegarder les attractions restantes dans la session
-    saveSessionData(sessionId, {
-      remainingAttractions,
-      category,
-      categoryDisplayName,
-      waitingForMoreResponse: true,
-      cityName: cityName
-    });
-
-    const messagesByCategory = {
-      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet for you!\n\nHere are the first ${ITEMS_PER_PAGE} incredible places you can explore:`,
-      'natural': `I found ${totalCount} beautiful natural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} stunning landscapes you can discover:`,
-      'cultural': `I found ${totalCount} fascinating cultural attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing cultural sites:`,
-      'historical': `I found ${totalCount} remarkable historical attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} incredible historical sites:`,
-      'artificial': `I found ${totalCount} impressive artificial attractions in Draa-Tafilalet!\n\nHere are the first ${ITEMS_PER_PAGE} amazing modern marvels:`
-    };
-
-    let displayMessage;
-    if (cityName) {
-      displayMessage = `I found ${totalCount} wonderful attractions in ${cityName}!\n\nHere are the first ${ITEMS_PER_PAGE} amazing places you can visit:`;
-    } else {
-      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
-    }
-
-    return {
-      fulfillmentText: displayMessage,
-      
-      payload: {
-        flutter: {
-          type: 'attractions_list_with_more',
-          category: category,
-          data: {
-            attractions: firstPageAttractions,
-            count: firstPageAttractions.length,
-            hasMore: true,
-            totalCount: totalCount,
-            remainingCount: remainingCount,
-            cityName: cityName,
-            sendMoreMessage: true
-          },
-          actions: [
-            { type: 'view_details', label: 'View Details', icon: 'info' },
-            { type: 'get_directions', label: 'Get_directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-          ]
-        }
-      }
-    };
-  }
-}
-
-// Handler pour "voir plus"
 async function handleShowMore(sessionId) {
   const sessionData = getSessionData(sessionId);
   
-  if (!sessionData || !sessionData.remainingAttractions) {
+  if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
     return {
-      fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
+      fulfillmentText: "I don't have any additional attractions to show right now."
     };
   }
 
-  const { remainingAttractions, category, categoryDisplayName } = sessionData;
+  const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
   
-  // Nettoyer la session
   sessionStorage.delete(sessionId);
 
-  const naturalResponse = `Perfect! Here are all the remaining ${categoryDisplayName} attractions:\n\nEnjoy exploring these additional gems!`;
+  const naturalResponse = cityName 
+    ? `Perfect! Here are all the remaining attractions in ${cityName}:`
+    : `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`;
 
   return {
     fulfillmentText: naturalResponse,
-    
     payload: {
       flutter: {
         type: 'attractions_list',
@@ -1249,6 +530,7 @@ async function handleShowMore(sessionId) {
         data: {
           attractions: remainingAttractions,
           count: remainingAttractions.length,
+          cityName: cityName
         },
         actions: [
           { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -1260,73 +542,20 @@ async function handleShowMore(sessionId) {
   };
 }
 
-// Handler pour refus
 function handleDecline(sessionId) {
-  // Nettoyer la session
   if (sessionId) {
     sessionStorage.delete(sessionId);
   }
   
   return {
-    fulfillmentText: "As you wish! No problem at all. I'm here anytime you need help discovering attractions in Draa-Tafilalet. Just ask me whenever you're ready! 😊"
+    fulfillmentText: "No problem! I'm here whenever you need help discovering attractions in Draa-Tafilalet. Just ask me anytime! 😊"
   };
 }
 
-// Fonctions utilitaires
-function extractSessionId(sessionPath) {
-  return sessionPath ? sessionPath.split('/').pop() : 'default-session';
-}
+// ============================
+// ERROR HANDLING
+// ============================
 
-function isUserWantingMore(queryText) {
-  if (!queryText) return false;
-  const lowerText = queryText.toLowerCase();
-  const positiveResponses = ['yes', 'oui', 'ok', 'okay', 'sure', 'please', 'show more', 'voir plus', 'more', 'continue', 'd\'accord', 'bien sûr'];
-  return positiveResponses.some(response => lowerText.includes(response));
-}
-
-function isUserDeclining(queryText) {
-  if (!queryText) return false;
-  const lowerText = queryText.toLowerCase();
-  const negativeResponses = ['no', 'non', 'nope', 'not now', 'maybe later', 'that\'s enough', 'pas maintenant', 'merci'];
-  return negativeResponses.some(response => lowerText.includes(response));
-}
-
-function saveSessionData(sessionId, data) {
-  const existingData = sessionStorage.get(sessionId);
-  const newData = { ...existingData, ...data, timestamp: Date.now() };
-  
-  console.log(`💾 Saving session data for ${sessionId}:`);
-  console.log(`📊 Data keys: ${Object.keys(newData).join(', ')}`);
-  console.log(`📊 Remaining attractions: ${newData.remainingAttractions?.length || 0}`);
-  
-  sessionStorage.set(sessionId, newData);
-}
-
-function getSessionData(sessionId) {
-  const data = sessionStorage.get(sessionId);
-  
-  console.log(`🔍 Getting session data for ${sessionId}:`);
-  console.log(`📊 Data found: ${data ? 'YES' : 'NO'}`);
-  
-  if (data) {
-    console.log(`📊 Session timestamp: ${new Date(data.timestamp).toISOString()}`);
-    console.log(`📊 Age: ${(Date.now() - data.timestamp) / 60000} minutes`);
-    
-    // ✅ NE PAS supprimer automatiquement, laisser chaque fonction gérer
-    // Augmenter le timeout à 1 heure au lieu de 30 minutes
-    if (Date.now() - data.timestamp > 60 * 60 * 1000) {
-      console.log(`🧹 Session expired (over 1 hour), cleaning up`);
-      sessionStorage.delete(sessionId);
-      return null;
-    }
-    
-    console.log(`📊 Session valid, remaining attractions: ${data.remainingAttractions?.length || 0}`);
-  }
-  
-  return data;
-}
-
-// Global error handler
 app.use((error, req, res, next) => {
   console.error('❌ Global error:', error);
   res.status(500).json({
@@ -1334,97 +563,21 @@ app.use((error, req, res, next) => {
   });
 });
 
-// ✅ Endpoint de debug pour voir le sessionStorage
-app.get('/debug-sessions', (req, res) => {
-  const allSessions = Array.from(sessionStorage.entries());
-  res.json({
-    totalSessions: allSessions.length,
-    sessions: allSessions.map(([key, value]) => ({
-      sessionId: key,
-      hasRemainingAttractions: !!value.remainingAttractions,
-      remainingCount: value.remainingAttractions?.length || 0,
-      category: value.category,
-      categoryDisplayName: value.categoryDisplayName,
-      waitingForMoreResponse: value.waitingForMoreResponse,
-      timestamp: new Date(value.timestamp).toISOString()
-    }))
-  });
-});
+// ============================
+// SERVER STARTUP
+// ============================
 
-// ✅ Endpoint pour vider le sessionStorage (si besoin)
-app.get('/clear-sessions', (req, res) => {
-  const count = sessionStorage.size;
-  sessionStorage.clear();
-  res.json({
-    message: `Cleared ${count} sessions`
-  });
-});
-// ✅ Fonction temporaire avec données mockées pour tester la pagination
-async function handleAllAttractionsWithContextMock(sessionId, outputContexts) {
-  try {
-    console.log('🧪 Using MOCK data for testing...');
-    
-    // Mock data avec 16 attractions
-    const mockAttractions = [
-      { id_Location: 1, name: "Mock Attraction 1", description: "Test 1", imageUrls: ["https://example.com/1.jpg"], entryFre: 10, guideToursAvailable: true, latitude: 1.1, longitude: 1.1, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 2, name: "Mock Attraction 2", description: "Test 2", imageUrls: ["https://example.com/2.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 1.2, longitude: 1.2, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 3, name: "Mock Attraction 3", description: "Test 3", imageUrls: ["https://example.com/3.jpg"], entryFre: 15, guideToursAvailable: true, latitude: 1.3, longitude: 1.3, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 4, name: "Mock Attraction 4", description: "Test 4", imageUrls: ["https://example.com/4.jpg"], entryFre: 5, guideToursAvailable: true, latitude: 1.4, longitude: 1.4, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 5, name: "Mock Attraction 5", description: "Test 5", imageUrls: ["https://example.com/5.jpg"], entryFre: 20, guideToursAvailable: true, latitude: 1.5, longitude: 1.5, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 6, name: "Mock Attraction 6", description: "Test 6", imageUrls: ["https://example.com/6.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 1.6, longitude: 1.6, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 7, name: "Mock Attraction 7", description: "Test 7", imageUrls: ["https://example.com/7.jpg"], entryFre: 12, guideToursAvailable: true, latitude: 1.7, longitude: 1.7, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 8, name: "Mock Attraction 8", description: "Test 8", imageUrls: ["https://example.com/8.jpg"], entryFre: 8, guideToursAvailable: true, latitude: 1.8, longitude: 1.8, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 9, name: "Mock Attraction 9", description: "Test 9", imageUrls: ["https://example.com/9.jpg"], entryFre: 25, guideToursAvailable: true, latitude: 1.9, longitude: 1.9, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 10, name: "Mock Attraction 10", description: "Test 10", imageUrls: ["https://example.com/10.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 2.0, longitude: 2.0, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 11, name: "Mock Attraction 11", description: "Test 11", imageUrls: ["https://example.com/11.jpg"], entryFre: 30, guideToursAvailable: true, latitude: 2.1, longitude: 2.1, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 12, name: "Mock Attraction 12", description: "Test 12", imageUrls: ["https://example.com/12.jpg"], entryFre: 18, guideToursAvailable: true, latitude: 2.2, longitude: 2.2, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 13, name: "Mock Attraction 13", description: "Test 13", imageUrls: ["https://example.com/13.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 2.3, longitude: 2.3, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 14, name: "Mock Attraction 14", description: "Test 14", imageUrls: ["https://example.com/14.jpg"], entryFre: 22, guideToursAvailable: true, latitude: 2.4, longitude: 2.4, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 15, name: "Mock Attraction 15", description: "Test 15", imageUrls: ["https://example.com/15.jpg"], entryFre: 14, guideToursAvailable: true, latitude: 2.5, longitude: 2.5, cityName: "Test City", countryName: "Morocco" },
-      { id_Location: 16, name: "Mock Attraction 16", description: "Test 16", imageUrls: ["https://example.com/16.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 2.6, longitude: 2.6, cityName: "Test City", countryName: "Morocco" }
-    ];
-
-    console.log(`✅ 16 MOCK attractions ready`);
-
-    return handlePaginatedResponseWithContext(
-      mockAttractions, 
-      'all', 
-      'general', 
-      sessionId, 
-      outputContexts
-    );
-  } catch (error) {
-    console.error('❌ Error with mock attractions:', error);
-    return { fulfillmentText: "Error with mock data." };
-  }
-}
-// Initialiser Google Auth au démarrage et démarrer le serveur
 initializeGoogleAuth().then(() => {
   app.listen(PORT, () => {
-    console.log(`🚀 Tourism Bot Backend with REAL Dialogflow started on port ${PORT}`);
-    console.log(`📱 Dialogflow Webhook URL: https://tourism-bot-backend-production.up.railway.app/webhook`);
-    console.log(`🔄 Flutter Proxy URL: https://tourism-bot-backend-production.up.railway.app/dialogflow-proxy`);
-    console.log(`🏛️ Tourism API: ${API_BASE_URL}`);
+    console.log(`🚀 Tourism Bot Backend started on port ${PORT}`);
     console.log(`🔑 Google Auth initialized: ${!!googleAuth}`);
     console.log(`📋 Project ID: ${PROJECT_ID}`);
-    console.log('✅ Ready to handle REAL Dialogflow requests!');
-    console.log('');
-    console.log('📋 Available endpoints:');
-    console.log('  GET  / - Health check');
-    console.log('  GET  /test - Test Tourism API');
-    console.log('  GET  /check-dialogflow-config - Check Dialogflow configuration');
-    console.log('  GET  /test-dialogflow-api - Test Dialogflow API directly');
-    console.log('  GET  /get-dialogflow-token - Get Dialogflow access token');
-    console.log('  POST /webhook - Dialogflow webhook');
-    console.log('  POST /dialogflow-proxy - Flutter proxy to Dialogflow');
+    console.log('✅ Ready to handle Dialogflow requests!');
   });
 }).catch(error => {
   console.error('❌ Failed to initialize:', error);
-  // Démarrer quand même le serveur en mode fallback
   app.listen(PORT, () => {
     console.log(`⚠️ Tourism Bot Backend started in FALLBACK mode on port ${PORT}`);
-    console.log(`❌ Google Auth failed to initialize: ${error.message}`);
-    console.log(`🔄 Using local intent detection only`);
   });
 });
 
