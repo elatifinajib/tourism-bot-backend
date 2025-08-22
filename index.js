@@ -473,22 +473,26 @@ async function handleAttractionDetails(sessionId, attractionName) {
     
     console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
 
+    // 🎯 STOCKER LES DONNÉES POUR LE DEUXIÈME MESSAGE
+    saveSessionData(sessionId, {
+      attractionData: attractionData,
+      attractionType: attractionType,
+      waitingForDetailsText: true,
+      attractionName: attractionData.name
+    });
+
+    // 🎯 PREMIER MESSAGE: JUSTE LES IMAGES
     return {
-      fulfillmentText: `Here are the complete details about ${attractionData.name}:`,
+      fulfillmentText: "", // Pas de texte pour le premier message
       payload: {
         flutter: {
           type: 'attraction_details',
           category: attractionType,
           data: {
             attraction: attractionData,
-            attractionType: attractionType
-          },
-          actions: [
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' },
-            { type: 'share', label: 'Share', icon: 'share' },
-            { type: 'book_tour', label: 'Book Tour', icon: 'calendar_month' }
-          ]
+            attractionType: attractionType,
+            onlyImages: true // Flag pour indiquer qu'on affiche que les images
+          }
         }
       }
     };
@@ -506,6 +510,42 @@ async function handleAttractionDetails(sessionId, attractionName) {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
     };
   }
+}
+
+function sendAttractionDetailsText(attractionData, attractionType) {
+  // Construire le message texte avec toutes les informations
+  let message = `**${attractionData.name}**\n\n`;
+  message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
+  
+  if (attractionData.description) {
+    message += `📝 **Description:**\n${attractionData.description}\n\n`;
+  }
+  
+  message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
+  message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
+  message += `🗺️ **GPS:** ${attractionData.latitude.toFixed(4)}, ${attractionData.longitude.toFixed(4)}\n`;
+  
+  // Ajouter les infos spécifiques selon le type
+  switch (attractionType) {
+    case 'natural':
+      if (attractionData.protectedArea !== undefined) {
+        message += `🌿 **Protected Area:** ${attractionData.protectedArea ? 'Yes - Protected Natural Site' : 'No'}\n`;
+      }
+      break;
+      
+    case 'cultural':
+    case 'historical':
+    case 'artificial':
+      if (attractionData.yearBuild) {
+        message += `📅 **Year Built:** ${attractionData.yearBuild}\n`;
+      }
+      if (attractionData.style) {
+        message += `🏛️ **Architectural Style:** ${attractionData.style}\n`;
+      }
+      break;
+  }
+  
+  return message;
 }
 // ============================
 // PAGINATION HANDLERS
