@@ -843,8 +843,8 @@ async function handleDialogflowIntent(intentName, sessionId, parameters = {}) {
   
   switch (intentName) {
     case 'Ask_All_Attractions':
-      console.log('📋 Handling: All Attractions');
-      return await handleAllAttractions(sessionId);
+      console.log('📋 SWITCH: Handling All Attractions');
+  return await handleAllAttractionsWithContextMock(sessionId, outputContexts);
     
     case 'Ask_Natural_Attractions':
       console.log('🌿 Handling: Natural Attractions');
@@ -1359,7 +1359,45 @@ app.get('/clear-sessions', (req, res) => {
     message: `Cleared ${count} sessions`
   });
 });
+// ✅ Fonction temporaire avec données mockées pour tester la pagination
+async function handleAllAttractionsWithContextMock(sessionId, outputContexts) {
+  try {
+    console.log('🧪 Using MOCK data for testing...');
+    
+    // Mock data avec 16 attractions
+    const mockAttractions = [
+      { id_Location: 1, name: "Mock Attraction 1", description: "Test 1", imageUrls: ["https://example.com/1.jpg"], entryFre: 10, guideToursAvailable: true, latitude: 1.1, longitude: 1.1, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 2, name: "Mock Attraction 2", description: "Test 2", imageUrls: ["https://example.com/2.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 1.2, longitude: 1.2, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 3, name: "Mock Attraction 3", description: "Test 3", imageUrls: ["https://example.com/3.jpg"], entryFre: 15, guideToursAvailable: true, latitude: 1.3, longitude: 1.3, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 4, name: "Mock Attraction 4", description: "Test 4", imageUrls: ["https://example.com/4.jpg"], entryFre: 5, guideToursAvailable: true, latitude: 1.4, longitude: 1.4, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 5, name: "Mock Attraction 5", description: "Test 5", imageUrls: ["https://example.com/5.jpg"], entryFre: 20, guideToursAvailable: true, latitude: 1.5, longitude: 1.5, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 6, name: "Mock Attraction 6", description: "Test 6", imageUrls: ["https://example.com/6.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 1.6, longitude: 1.6, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 7, name: "Mock Attraction 7", description: "Test 7", imageUrls: ["https://example.com/7.jpg"], entryFre: 12, guideToursAvailable: true, latitude: 1.7, longitude: 1.7, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 8, name: "Mock Attraction 8", description: "Test 8", imageUrls: ["https://example.com/8.jpg"], entryFre: 8, guideToursAvailable: true, latitude: 1.8, longitude: 1.8, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 9, name: "Mock Attraction 9", description: "Test 9", imageUrls: ["https://example.com/9.jpg"], entryFre: 25, guideToursAvailable: true, latitude: 1.9, longitude: 1.9, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 10, name: "Mock Attraction 10", description: "Test 10", imageUrls: ["https://example.com/10.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 2.0, longitude: 2.0, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 11, name: "Mock Attraction 11", description: "Test 11", imageUrls: ["https://example.com/11.jpg"], entryFre: 30, guideToursAvailable: true, latitude: 2.1, longitude: 2.1, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 12, name: "Mock Attraction 12", description: "Test 12", imageUrls: ["https://example.com/12.jpg"], entryFre: 18, guideToursAvailable: true, latitude: 2.2, longitude: 2.2, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 13, name: "Mock Attraction 13", description: "Test 13", imageUrls: ["https://example.com/13.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 2.3, longitude: 2.3, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 14, name: "Mock Attraction 14", description: "Test 14", imageUrls: ["https://example.com/14.jpg"], entryFre: 22, guideToursAvailable: true, latitude: 2.4, longitude: 2.4, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 15, name: "Mock Attraction 15", description: "Test 15", imageUrls: ["https://example.com/15.jpg"], entryFre: 14, guideToursAvailable: true, latitude: 2.5, longitude: 2.5, cityName: "Test City", countryName: "Morocco" },
+      { id_Location: 16, name: "Mock Attraction 16", description: "Test 16", imageUrls: ["https://example.com/16.jpg"], entryFre: 0, guideToursAvailable: true, latitude: 2.6, longitude: 2.6, cityName: "Test City", countryName: "Morocco" }
+    ];
 
+    console.log(`✅ 16 MOCK attractions ready`);
+
+    return handlePaginatedResponseWithContext(
+      mockAttractions, 
+      'all', 
+      'general', 
+      sessionId, 
+      outputContexts
+    );
+  } catch (error) {
+    console.error('❌ Error with mock attractions:', error);
+    return { fulfillmentText: "Error with mock data." };
+  }
+}
 // Initialiser Google Auth au démarrage et démarrer le serveur
 initializeGoogleAuth().then(() => {
   app.listen(PORT, () => {
