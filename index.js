@@ -648,74 +648,74 @@ function handlePaginatedResponseWithContext(allAttractions, category, categoryDi
 async function handleShowMoreFromContext(sessionId, outputContexts) {
   console.log('📄 ========== HANDLE SHOW MORE FROM CONTEXT ==========');
   console.log(`🔍 Session ID: ${sessionId}`);
-  console.log(`🔍 Output Contexts:`, outputContexts.map(ctx => ctx.name));
   
-  // Vérifier TOUS les sessionStorage
-  console.log('📊 ALL SESSIONS IN STORAGE:');
-  const allSessions = Array.from(sessionStorage.entries());
-  allSessions.forEach(([key, value]) => {
-    console.log(`  - Session ${key}: hasRemaining=${!!value.remainingAttractions}, count=${value.remainingAttractions?.length || 0}`);
-  });
-  
-  // Récupérer les données pour CE sessionId
-  console.log(`🔍 LOOKING FOR SESSION: ${sessionId}`);
-  const sessionData = getSessionData(sessionId);
-  
-  console.log(`📊 Session data found:`, sessionData ? 'YES' : 'NO');
-  if (sessionData) {
-    console.log(`📊 Full session data:`, JSON.stringify(sessionData, null, 2));
-    console.log(`📊 Remaining attractions count:`, sessionData.remainingAttractions?.length || 0);
-    console.log(`📊 Category:`, sessionData.category);
-    console.log(`📊 Has waitingForMoreResponse:`, sessionData.waitingForMoreResponse);
-  } else {
-    console.log(`❌ NO SESSION DATA FOUND FOR ${sessionId}`);
-    console.log(`❌ Available sessions: ${Array.from(sessionStorage.keys()).join(', ')}`);
-  }
-  
-  // Vérifier qu'on a bien les données
-  if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
-    console.log('❌ RETURNING ERROR: No pagination data found');
+  try {
+    // ✅ CORRECTION: Récupérer directement depuis le Map sans passer par getSessionData
+    console.log('📊 ALL SESSIONS IN STORAGE:');
+    const allSessions = Array.from(sessionStorage.entries());
+    allSessions.forEach(([key, value]) => {
+      console.log(`  - Session ${key}: hasRemaining=${!!value.remainingAttractions}, count=${value.remainingAttractions?.length || 0}`);
+    });
+    
+    // ✅ Récupération DIRECTE sans vérification d'expiration
+    const sessionData = sessionStorage.get(sessionId);
+    
+    console.log(`📊 Direct session data found:`, sessionData ? 'YES' : 'NO');
+    if (sessionData) {
+      console.log(`📊 Remaining attractions count:`, sessionData.remainingAttractions?.length || 0);
+      console.log(`📊 Category:`, sessionData.category);
+      console.log(`📊 Timestamp:`, new Date(sessionData.timestamp).toISOString());
+      console.log(`📊 Age in minutes:`, (Date.now() - sessionData.timestamp) / 60000);
+    }
+    
+    // Vérifier qu'on a bien les données
+    if (!sessionData || !sessionData.remainingAttractions || sessionData.remainingAttractions.length === 0) {
+      console.log('❌ RETURNING ERROR: No pagination data found');
+      return {
+        fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
+      };
+    }
+
+    // Extraire les données
+    const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
+    
+    console.log(`✅ SUCCESS: Found ${remainingAttractions.length} remaining attractions for category: ${category}`);
+    
+    // ✅ Nettoyer la session APRÈS extraction réussie
+    console.log('🧹 Cleaning session data after successful extraction');
+    sessionStorage.delete(sessionId);
+
+    const naturalResponse = cityName 
+      ? `Perfect! Here are all the remaining attractions in ${cityName}:`
+      : `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`;
+
+    console.log(`✅ RETURNING SUCCESS with ${remainingAttractions.length} attractions`);
+
     return {
-      fulfillmentText: "I don't have any additional attractions to show right now. Feel free to ask about a specific category of attractions!"
+      fulfillmentText: naturalResponse,
+      payload: {
+        flutter: {
+          type: 'attractions_list',
+          category: category,
+          data: {
+            attractions: remainingAttractions,
+            count: remainingAttractions.length,
+            cityName: cityName
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+  } catch (error) {
+    console.error('❌ ERROR in handleShowMoreFromContext:', error);
+    return {
+      fulfillmentText: "Sorry, there was an error showing more attractions."
     };
   }
-
-  // Extraire les données
-  const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
-  
-  console.log(`✅ SUCCESS: Found ${remainingAttractions.length} remaining attractions for category: ${category}`);
-  console.log(`✅ Sample attraction:`, remainingAttractions[0]?.name || 'none');
-  
-  // Nettoyer la session
-  console.log('🧹 Cleaning session data after extracting');
-  sessionStorage.delete(sessionId);
-
-  const naturalResponse = cityName 
-    ? `Perfect! Here are all the remaining attractions in ${cityName}:`
-    : `Perfect! Here are all the remaining ${categoryDisplayName} attractions:`;
-
-  console.log(`✅ RETURNING SUCCESS with ${remainingAttractions.length} attractions`);
-  console.log('📄 ===============================================');
-
-  return {
-    fulfillmentText: naturalResponse,
-    payload: {
-      flutter: {
-        type: 'attractions_list',
-        category: category,
-        data: {
-          attractions: remainingAttractions,
-          count: remainingAttractions.length,
-          cityName: cityName
-        },
-        actions: [
-          { type: 'view_details', label: 'View Details', icon: 'info' },
-          { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-          { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-        ]
-      }
-    }
-  };
 }
 
 async function handleDeclineFromContext(sessionId) {
@@ -1309,9 +1309,13 @@ function getSessionData(sessionId) {
   console.log(`📊 Data found: ${data ? 'YES' : 'NO'}`);
   
   if (data) {
-    // Nettoyer les sessions anciennes (plus de 30 minutes)
-    if (Date.now() - data.timestamp > 30 * 60 * 1000) {
-      console.log(`🧹 Session expired, cleaning up`);
+    console.log(`📊 Session timestamp: ${new Date(data.timestamp).toISOString()}`);
+    console.log(`📊 Age: ${(Date.now() - data.timestamp) / 60000} minutes`);
+    
+    // ✅ NE PAS supprimer automatiquement, laisser chaque fonction gérer
+    // Augmenter le timeout à 1 heure au lieu de 30 minutes
+    if (Date.now() - data.timestamp > 60 * 60 * 1000) {
+      console.log(`🧹 Session expired (over 1 hour), cleaning up`);
       sessionStorage.delete(sessionId);
       return null;
     }
