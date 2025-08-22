@@ -85,41 +85,6 @@ async function getGoogleAccessToken() {
 // UTILITY FUNCTIONS
 // ============================
 
-function determineAttractionType(attractionData) {
-  // Vérifier les propriétés spécifiques pour déterminer le type
-  if (attractionData.hasOwnProperty('protectedArea')) {
-    return 'natural';
-  } else if (attractionData.hasOwnProperty('style') && attractionData.hasOwnProperty('yearBuild')) {
-    // Si a les deux, vérifier d'autres indices
-    if (attractionData.hasOwnProperty('historicalPeriod') || attractionData.hasOwnProperty('dynastyName')) {
-      return 'historical';
-    } else {
-      return 'cultural';
-    }
-  } else if (attractionData.hasOwnProperty('yearBuild') && !attractionData.hasOwnProperty('style')) {
-    return 'artificial';
-  } else if (attractionData.hasOwnProperty('style') && !attractionData.hasOwnProperty('yearBuild')) {
-    return 'historical';
-  } else {
-    // Fallback - analyser le nom ou la description
-    const name = (attractionData.name || '').toLowerCase();
-    const description = (attractionData.description || '').toLowerCase();
-    
-    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
-        description.includes('natural') || description.includes('nature')) {
-      return 'natural';
-    } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
-               description.includes('cultural') || description.includes('heritage')) {
-      return 'cultural';
-    } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
-               description.includes('historical') || description.includes('ancient')) {
-      return 'historical';
-    } else {
-      return 'artificial';
-    }
-  }
-} 
-
 async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -177,6 +142,42 @@ async function tryMultipleCityVariants(cityName) {
     usedVariant: successfulVariant,
     totalFound: allResults.length
   };
+}
+
+// Fonction helper pour déterminer le type d'attraction
+function determineAttractionType(attractionData) {
+  // Vérifier les propriétés spécifiques pour déterminer le type
+  if (attractionData.hasOwnProperty('protectedArea')) {
+    return 'natural';
+  } else if (attractionData.hasOwnProperty('style') && attractionData.hasOwnProperty('yearBuild')) {
+    // Si a les deux, vérifier d'autres indices
+    if (attractionData.hasOwnProperty('historicalPeriod') || attractionData.hasOwnProperty('dynastyName')) {
+      return 'historical';
+    } else {
+      return 'cultural';
+    }
+  } else if (attractionData.hasOwnProperty('yearBuild') && !attractionData.hasOwnProperty('style')) {
+    return 'artificial';
+  } else if (attractionData.hasOwnProperty('style') && !attractionData.hasOwnProperty('yearBuild')) {
+    return 'historical';
+  } else {
+    // Fallback - analyser le nom ou la description
+    const name = (attractionData.name || '').toLowerCase();
+    const description = (attractionData.description || '').toLowerCase();
+    
+    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
+        description.includes('natural') || description.includes('nature')) {
+      return 'natural';
+    } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
+               description.includes('cultural') || description.includes('heritage')) {
+      return 'cultural';
+    } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
+               description.includes('historical') || description.includes('ancient')) {
+      return 'historical';
+    } else {
+      return 'artificial';
+    }
+  }
 }
 
 // ============================
@@ -297,6 +298,10 @@ async function processDialogflowResponse(queryResult, sessionId) {
         const cityName = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAttractionsByCity(sessionId, cityName);
       
+      case 'Ask_Attraction_Details':
+        const attractionName = parameters['attraction-name'] || parameters.name;
+        return await handleAttractionDetails(sessionId, attractionName);
+      
       case 'Pagination_ShowMore':
         return await handleShowMore(sessionId);
       
@@ -307,9 +312,6 @@ async function processDialogflowResponse(queryResult, sessionId) {
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, cultural sites, natural wonders, and more."
         };
-      case 'Ask_Attraction_Details':
-          const attractionName = parameters['attraction-name'] || parameters.name;
-          return await handleAttractionDetails(sessionId, attractionName);  
       
       default:
         return {
@@ -445,6 +447,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
   }
 }
 
+// 🆕 NOUVEAU: Handler pour les détails d'attraction
 async function handleAttractionDetails(sessionId, attractionName) {
   try {
     if (!attractionName) {
@@ -473,25 +476,16 @@ async function handleAttractionDetails(sessionId, attractionName) {
     
     console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
 
-    // 🎯 STOCKER LES DONNÉES POUR LE DEUXIÈME MESSAGE
-    saveSessionData(sessionId, {
-      attractionData: attractionData,
-      attractionType: attractionType,
-      waitingForDetailsText: true,
-      attractionName: attractionData.name
-    });
-
-    // 🎯 PREMIER MESSAGE: JUSTE LES IMAGES
+    // 🎯 MESSAGE UNIQUE AVEC TEXTE ET IMAGES
     return {
-      fulfillmentText: "", // Pas de texte pour le premier message
+      fulfillmentText: `Here are the complete details about ${attractionData.name}:`,
       payload: {
         flutter: {
           type: 'attraction_details',
           category: attractionType,
           data: {
             attraction: attractionData,
-            attractionType: attractionType,
-            onlyImages: true // Flag pour indiquer qu'on affiche que les images
+            attractionType: attractionType
           }
         }
       }
@@ -512,41 +506,6 @@ async function handleAttractionDetails(sessionId, attractionName) {
   }
 }
 
-function sendAttractionDetailsText(attractionData, attractionType) {
-  // Construire le message texte avec toutes les informations
-  let message = `**${attractionData.name}**\n\n`;
-  message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
-  
-  if (attractionData.description) {
-    message += `📝 **Description:**\n${attractionData.description}\n\n`;
-  }
-  
-  message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
-  message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
-  message += `🗺️ **GPS:** ${attractionData.latitude.toFixed(4)}, ${attractionData.longitude.toFixed(4)}\n`;
-  
-  // Ajouter les infos spécifiques selon le type
-  switch (attractionType) {
-    case 'natural':
-      if (attractionData.protectedArea !== undefined) {
-        message += `🌿 **Protected Area:** ${attractionData.protectedArea ? 'Yes - Protected Natural Site' : 'No'}\n`;
-      }
-      break;
-      
-    case 'cultural':
-    case 'historical':
-    case 'artificial':
-      if (attractionData.yearBuild) {
-        message += `📅 **Year Built:** ${attractionData.yearBuild}\n`;
-      }
-      if (attractionData.style) {
-        message += `🏛️ **Architectural Style:** ${attractionData.style}\n`;
-      }
-      break;
-  }
-  
-  return message;
-}
 // ============================
 // PAGINATION HANDLERS
 // ============================
