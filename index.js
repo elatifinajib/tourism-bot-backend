@@ -85,6 +85,41 @@ async function getGoogleAccessToken() {
 // UTILITY FUNCTIONS
 // ============================
 
+function determineAttractionType(attractionData) {
+  // Vérifier les propriétés spécifiques pour déterminer le type
+  if (attractionData.hasOwnProperty('protectedArea')) {
+    return 'natural';
+  } else if (attractionData.hasOwnProperty('style') && attractionData.hasOwnProperty('yearBuild')) {
+    // Si a les deux, vérifier d'autres indices
+    if (attractionData.hasOwnProperty('historicalPeriod') || attractionData.hasOwnProperty('dynastyName')) {
+      return 'historical';
+    } else {
+      return 'cultural';
+    }
+  } else if (attractionData.hasOwnProperty('yearBuild') && !attractionData.hasOwnProperty('style')) {
+    return 'artificial';
+  } else if (attractionData.hasOwnProperty('style') && !attractionData.hasOwnProperty('yearBuild')) {
+    return 'historical';
+  } else {
+    // Fallback - analyser le nom ou la description
+    const name = (attractionData.name || '').toLowerCase();
+    const description = (attractionData.description || '').toLowerCase();
+    
+    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
+        description.includes('natural') || description.includes('nature')) {
+      return 'natural';
+    } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
+               description.includes('cultural') || description.includes('heritage')) {
+      return 'cultural';
+    } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
+               description.includes('historical') || description.includes('ancient')) {
+      return 'historical';
+    } else {
+      return 'artificial';
+    }
+  }
+} 
+
 async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -272,6 +307,9 @@ async function processDialogflowResponse(queryResult, sessionId) {
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, cultural sites, natural wonders, and more."
         };
+      case 'Ask_Attraction_Details':
+          const attractionName = parameters['attraction-name'] || parameters.name;
+          return await handleAttractionDetails(sessionId, attractionName);  
       
       default:
         return {
@@ -407,6 +445,68 @@ async function handleAttractionsByCity(sessionId, cityName) {
   }
 }
 
+async function handleAttractionDetails(sessionId, attractionName) {
+  try {
+    if (!attractionName) {
+      return {
+        fulfillmentText: "Please tell me which attraction you'd like to know more about."
+      };
+    }
+
+    console.log(`🔍 Fetching details for attraction: ${attractionName}`);
+    
+    // Appel à l'endpoint pour récupérer les détails complets
+    const response = await makeApiCall(
+      `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
+    );
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: `I couldn't find detailed information about "${attractionName}". Please check the spelling or try another attraction name.`
+      };
+    }
+
+    const attractionData = response.data[0]; // Prendre le premier résultat
+    
+    // Déterminer le type d'attraction basé sur les propriétés présentes
+    const attractionType = determineAttractionType(attractionData);
+    
+    console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
+
+    return {
+      fulfillmentText: `Here are the complete details about ${attractionData.name}:`,
+      payload: {
+        flutter: {
+          type: 'attraction_details',
+          category: attractionType,
+          data: {
+            attraction: attractionData,
+            attractionType: attractionType
+          },
+          actions: [
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' },
+            { type: 'share', label: 'Share', icon: 'share' },
+            { type: 'book_tour', label: 'Book Tour', icon: 'calendar_month' }
+          ]
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ Error fetching attraction details for ${attractionName}:`, error);
+    
+    if (error.response?.status === 404) {
+      return {
+        fulfillmentText: `I couldn't find an attraction named "${attractionName}". Please check the name or try searching for something similar.`
+      };
+    }
+    
+    return {
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
+    };
+  }
+}
 // ============================
 // PAGINATION HANDLERS
 // ============================
