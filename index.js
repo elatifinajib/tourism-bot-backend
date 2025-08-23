@@ -326,7 +326,7 @@ async function handleShowAttractionOnMap(sessionId) {
 
     // 🔧 MESSAGE TRÈS COURT ET SIMPLE
     return {
-      fulfillmentText: `📍 Location: ${name}`, // 🔧 MESSAGE MINIMALISTE
+      fulfillmentText: `Here u can find ${name} in map : `, // 🔧 MESSAGE MINIMALISTE
       payload: {
         flutter: {
           type: 'map_location',
