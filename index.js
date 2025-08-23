@@ -172,6 +172,81 @@ function extractSessionId(sessionPath) {
   return sessionPath ? sessionPath.split('/').pop() : 'default-session';
 }
 
+// 🆕 NOUVELLES FONCTIONS POUR GESTION DES DÉTAILS DEPUIS LISTE
+function saveDisplayedAttractions(sessionId, attractions, category, cityName = null) {
+  const sessionData = getSessionData(sessionId) || {};
+  
+  saveSessionData(sessionId, {
+    ...sessionData,
+    displayedAttractions: attractions,
+    displayedCategory: category,
+    displayedCityName: cityName,
+    displayedTimestamp: Date.now()
+  });
+  
+  console.log(`💾 Saved ${attractions.length} displayed attractions for session ${sessionId}`);
+}
+
+function getAttractionFromDisplayed(sessionId, identifier) {
+  const sessionData = getSessionData(sessionId);
+  
+  if (!sessionData || !sessionData.displayedAttractions) {
+    return { found: false, error: 'No attractions list available. Please ask for attractions first.' };
+  }
+
+  const attractions = sessionData.displayedAttractions;
+  
+  // Vérifier si l'identifiant est un nombre (index)
+  if (/^\d+$/.test(identifier.toString())) {
+    const index = parseInt(identifier) - 1; // L'utilisateur compte à partir de 1
+    
+    if (index >= 0 && index < attractions.length) {
+      return { 
+        found: true, 
+        attraction: attractions[index],
+        index: index + 1,
+        totalDisplayed: attractions.length
+      };
+    } else {
+      return { 
+        found: false, 
+        error: `Invalid position. Please choose a number between 1 and ${attractions.length}.`
+      };
+    }
+  }
+  
+  // Recherche par nom (insensible à la casse)
+  const searchName = identifier.toLowerCase().trim();
+  
+  // Recherche exacte d'abord
+  let foundAttraction = attractions.find(attr => 
+    attr.name.toLowerCase() === searchName
+  );
+  
+  // Si pas trouvé, recherche partielle
+  if (!foundAttraction) {
+    foundAttraction = attractions.find(attr => 
+      attr.name.toLowerCase().includes(searchName) ||
+      searchName.includes(attr.name.toLowerCase())
+    );
+  }
+  
+  if (foundAttraction) {
+    const index = attractions.findIndex(attr => attr.id_Location === foundAttraction.id_Location);
+    return { 
+      found: true, 
+      attraction: foundAttraction,
+      index: index + 1,
+      totalDisplayed: attractions.length
+    };
+  }
+  
+  return { 
+    found: false, 
+    error: `Attraction "${identifier}" not found in the current list. Please check the name or use a number (1-${attractions.length}).`
+  };
+}
+
 // ============================
 // MAIN ENDPOINTS
 // ============================
@@ -272,7 +347,15 @@ async function processDialogflowResponse(queryResult, sessionId) {
         const attractionName = parameters['attraction-name'] || parameters.name;
         return await handleAttractionDetails(sessionId, attractionName);
       
-      // 🆕 NOUVEAUX INTENTS POUR LES MAPS
+      // 🆕 NOUVEAU INTENT POUR DÉTAILS DEPUIS LISTE
+      case 'Ask_Details_From_List':
+        const identifier = parameters['attraction-identifier'] || 
+                          parameters['attraction-name'] || 
+                          parameters['number'] ||
+                          parameters.name;
+        return await handleAttractionDetailsFromList(sessionId, identifier);
+      
+      // INTENTS POUR LES MAPS
       case 'Show_Attraction_On_Map':
       case 'Map_Request_Yes':
         return await handleShowAttractionOnMap(sessionId);
@@ -284,16 +367,10 @@ async function processDialogflowResponse(queryResult, sessionId) {
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, cultural sites, natural wonders, and more."
         };
-         case 'Ask_Details_From_List':
-        const identifier = parameters['attraction-identifier'] || 
-                          parameters['attraction-name'] || 
-                          parameters['number'] ||
-                          parameters.name;
-        return await handleAttractionDetailsFromList(sessionId, identifier);
         
       default:
         return {
-          fulfillmentText: `Sorry, there was an error processing your request.`
+          fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, cultural sites, or natural wonders.`
         };
     }
   } catch (error) {
@@ -305,10 +382,69 @@ async function processDialogflowResponse(queryResult, sessionId) {
 }
 
 // ============================
-// 🆕 NOUVEAUX HANDLERS POUR MAPS
+// 🆕 NOUVEAU HANDLER POUR DÉTAILS DEPUIS LISTE
 // ============================
 
-// 🔧 MODIFICATION dans handleShowAttractionOnMap
+async function handleAttractionDetailsFromList(sessionId, identifier) {
+  try {
+    console.log(`🔍 Searching for attraction details from list: ${identifier}`);
+    
+    const result = getAttractionFromDisplayed(sessionId, identifier);
+    
+    if (!result.found) {
+      return {
+        fulfillmentText: result.error
+      };
+    }
+    
+    const attractionData = result.attraction;
+    const attractionType = determineAttractionType(attractionData);
+    const position = result.index;
+    
+    console.log(`✅ Found attraction #${position}: ${attractionData.name} (${attractionType})`);
+
+    // Sauvegarder les données pour le flux map
+    saveSessionData(sessionId, {
+      attractionData: attractionData,
+      attractionType: attractionType,
+      waitingForDetailsText: true,
+      waitingForMapResponse: true,
+      attractionName: attractionData.name,
+      fromList: true,
+      listPosition: position
+    });
+
+    // Premier message: juste les images
+    return {
+      fulfillmentText: "",
+      payload: {
+        flutter: {
+          type: 'attraction_details',
+          category: attractionType,
+          data: {
+            attraction: attractionData,
+            attractionType: attractionType,
+            onlyImages: true,
+            fromList: true,
+            position: position
+          }
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ Error fetching attraction details from list for ${identifier}:`, error);
+    
+    return {
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about that attraction. Please try again.`
+    };
+  }
+}
+
+// ============================
+// HANDLERS POUR MAPS
+// ============================
+
 async function handleShowAttractionOnMap(sessionId) {
   try {
     const sessionData = getSessionData(sessionId);
@@ -330,9 +466,8 @@ async function handleShowAttractionOnMap(sessionId) {
     // Nettoyer la session
     sessionStorage.delete(sessionId);
 
-    // 🔧 MESSAGE TRÈS COURT ET SIMPLE
     return {
-      fulfillmentText: `Here u can find ${name} in map : `, // 🔧 MESSAGE MINIMALISTE
+      fulfillmentText: `Here you can find ${name} on map: `,
       payload: {
         flutter: {
           type: 'map_location',
@@ -340,9 +475,7 @@ async function handleShowAttractionOnMap(sessionId) {
             attraction: attraction,
             coordinates: { latitude: lat, longitude: lng },
             googleMapsUrl: googleMapsUrl
-            // 🚫 SUPPRIMÉ: appleMapsUrl, mapOptions, actions complexes
           }
-          // 🚫 SUPPRIMÉ: actions array
         }
       }
     };
@@ -394,12 +527,12 @@ async function handleAttractionDetails(sessionId, attractionName) {
     
     console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
 
-    // 🆕 MODIFICATION: Sauvegarder les données pour le flux map
+    // Sauvegarder les données pour le flux map
     saveSessionData(sessionId, {
       attractionData: attractionData,
       attractionType: attractionType,
       waitingForDetailsText: true,
-      waitingForMapResponse: true, // 🆕 NOUVEAU FLAG
+      waitingForMapResponse: true,
       attractionName: attractionData.name
     });
 
@@ -467,81 +600,6 @@ function determineAttractionType(attractionData) {
       return 'artificial';
     }
   }
-}
-
-function saveDisplayedAttractions(sessionId, attractions, category, cityName = null) {
-  const sessionData = getSessionData(sessionId) || {};
-  
-  saveSessionData(sessionId, {
-    ...sessionData,
-    displayedAttractions: attractions,
-    displayedCategory: category,
-    displayedCityName: cityName,
-    displayedTimestamp: Date.now()
-  });
-  
-  console.log(`💾 Saved ${attractions.length} displayed attractions for session ${sessionId}`);
-} 
-
-// Fonction pour récupérer une attraction par index ou nom depuis la liste affichée
-function getAttractionFromDisplayed(sessionId, identifier) {
-  const sessionData = getSessionData(sessionId);
-  
-  if (!sessionData || !sessionData.displayedAttractions) {
-    return { found: false, error: 'No attractions list available. Please ask for attractions first.' };
-  }
-
-  const attractions = sessionData.displayedAttractions;
-  
-  // Vérifier si l'identifiant est un nombre (index)
-  if (/^\d+$/.test(identifier.toString())) {
-    const index = parseInt(identifier) - 1; // L'utilisateur compte à partir de 1
-    
-    if (index >= 0 && index < attractions.length) {
-      return { 
-        found: true, 
-        attraction: attractions[index],
-        index: index + 1,
-        totalDisplayed: attractions.length
-      };
-    } else {
-      return { 
-        found: false, 
-        error: `Invalid position. Please choose a number between 1 and ${attractions.length}.`
-      };
-    }
-  }
-  
-  // Recherche par nom (insensible à la casse)
-  const searchName = identifier.toLowerCase().trim();
-  
-  // Recherche exacte d'abord
-  let foundAttraction = attractions.find(attr => 
-    attr.name.toLowerCase() === searchName
-  );
-  
-  // Si pas trouvé, recherche partielle
-  if (!foundAttraction) {
-    foundAttraction = attractions.find(attr => 
-      attr.name.toLowerCase().includes(searchName) ||
-      searchName.includes(attr.name.toLowerCase())
-    );
-  }
-  
-  if (foundAttraction) {
-    const index = attractions.findIndex(attr => attr.id_Location === foundAttraction.id_Location);
-    return { 
-      found: true, 
-      attraction: foundAttraction,
-      index: index + 1,
-      totalDisplayed: attractions.length
-    };
-  }
-  
-  return { 
-    found: false, 
-    error: `Attraction "${identifier}" not found in the current list. Please check the name or use a number (1-${attractions.length}).`
-  };
 }
 
 async function handleAllAttractions(sessionId) {
@@ -662,7 +720,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
 }
 
 // ============================
-// PAGINATION HANDLERS
+// PAGINATION HANDLERS (MODIFIÉS)
 // ============================
 
 function handlePaginatedResponse(allAttractions, category, categoryDisplayName, sessionId, cityName = null) {
@@ -770,51 +828,6 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
   }
 }
 
-// 🆕 FONCTION MODIFIÉE: sendAttractionDetailsText (sans coordonnées GPS)
-function sendAttractionDetailsText(attractionData, attractionType, fromList = false, position = null) {
-  let message = `**${attractionData.name}**`;
-  
-  // 🆕 Ajouter info position si depuis liste
-  if (fromList && position) {
-    message += ` (Position #${position})`;
-  }
-  
-  message += `\n\n`;
-  message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
-  
-  if (attractionData.description) {
-    message += `📝 **Description:**\n${attractionData.description}\n\n`;
-  }
-  
-  message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
-  message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
-  
-  // Ajouter les infos spécifiques selon le type
-  switch (attractionType) {
-    case 'natural':
-      if (attractionData.protectedArea !== undefined) {
-        message += `🌿 **Protected Area:** ${attractionData.protectedArea ? 'Yes - Protected Natural Site' : 'No'}\n`;
-      }
-      break;
-      
-    case 'cultural':
-    case 'historical':
-    case 'artificial':
-      if (attractionData.yearBuild) {
-        message += `📅 **Year Built:** ${attractionData.yearBuild}\n`;
-      }
-      if (attractionData.style) {
-        message += `🏛️ **Architectural Style:** ${attractionData.style}\n`;
-      }
-      break;
-  }
-  
-  // 🆕 NOUVEAU: Ajouter la question pour la carte à la fin
-  message += `\n🗺️ Would you like to see this attraction on the map?`;
-  
-  return message;
-}
-
 async function handleShowMore(sessionId) {
   const sessionData = getSessionData(sessionId);
   
@@ -867,62 +880,6 @@ async function handleShowMore(sessionId) {
   };
 }
 
-async function handleAttractionDetailsFromList(sessionId, identifier) {
-  try {
-    console.log(`🔍 Searching for attraction details from list: ${identifier}`);
-    
-    const result = getAttractionFromDisplayed(sessionId, identifier);
-    
-    if (!result.found) {
-      return {
-        fulfillmentText: result.error
-      };
-    }
-    
-    const attractionData = result.attraction;
-    const attractionType = determineAttractionType(attractionData);
-    const position = result.index;
-    
-    console.log(`✅ Found attraction #${position}: ${attractionData.name} (${attractionType})`);
-
-    // 🆕 Sauvegarder les données pour le flux map (même logique que handleAttractionDetails)
-    saveSessionData(sessionId, {
-      attractionData: attractionData,
-      attractionType: attractionType,
-      waitingForDetailsText: true,
-      waitingForMapResponse: true,
-      attractionName: attractionData.name,
-      fromList: true, // 🆕 Flag pour indiquer que c'est depuis une liste
-      listPosition: position
-    });
-
-    // Premier message: juste les images (même logique que handleAttractionDetails)
-    return {
-      fulfillmentText: "",
-      payload: {
-        flutter: {
-          type: 'attraction_details',
-          category: attractionType,
-          data: {
-            attraction: attractionData,
-            attractionType: attractionType,
-            onlyImages: true,
-            fromList: true,
-            position: position
-          }
-        }
-      }
-    };
-
-  } catch (error) {
-    console.error(`❌ Error fetching attraction details from list for ${identifier}:`, error);
-    
-    return {
-      fulfillmentText: `Sorry, I'm having trouble retrieving details about that attraction. Please try again.`
-    };
-  }
-}
-
 function handleDecline(sessionId) {
   if (sessionId) {
     sessionStorage.delete(sessionId);
@@ -931,6 +888,54 @@ function handleDecline(sessionId) {
   return {
     fulfillmentText: "No problem! I'm here whenever you need help discovering attractions in Draa-Tafilalet. Just ask me anytime! 😊"
   };
+}
+
+// ============================
+// 🔧 FONCTION MODIFIÉE : sendAttractionDetailsText
+// ============================
+
+function sendAttractionDetailsText(attractionData, attractionType, fromList = false, position = null) {
+  let message = `**${attractionData.name}**`;
+  
+  // 🆕 Ajouter info position si depuis liste
+  if (fromList && position) {
+    message += ` (Position #${position})`;
+  }
+  
+  message += `\n\n`;
+  message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
+  
+  if (attractionData.description) {
+    message += `📝 **Description:**\n${attractionData.description}\n\n`;
+  }
+  
+  message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
+  message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
+  
+  // Ajouter les infos spécifiques selon le type
+  switch (attractionType) {
+    case 'natural':
+      if (attractionData.protectedArea !== undefined) {
+        message += `🌿 **Protected Area:** ${attractionData.protectedArea ? 'Yes - Protected Natural Site' : 'No'}\n`;
+      }
+      break;
+      
+    case 'cultural':
+    case 'historical':
+    case 'artificial':
+      if (attractionData.yearBuild) {
+        message += `📅 **Year Built:** ${attractionData.yearBuild}\n`;
+      }
+      if (attractionData.style) {
+        message += `🏛️ **Architectural Style:** ${attractionData.style}\n`;
+      }
+      break;
+  }
+  
+  // 🆕 NOUVEAU: Ajouter la question pour la carte à la fin
+  message += `\n🗺️ Would you like to see this attraction on the map?`;
+  
+  return message;
 }
 
 // ============================
