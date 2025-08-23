@@ -318,36 +318,25 @@ async function handleShowAttractionOnMap(sessionId) {
     const lng = attraction.longitude;
     const name = attraction.name;
     
-    // Créer les liens Maps
+    // Créer le lien Google Maps
     const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
-    const appleMapsUrl = `http://maps.apple.com/?q=${encodeURIComponent(name)}&ll=${lat},${lng}`;
     
-    // 🔧 NETTOYER COMPLÈTEMENT la session pour éviter les duplications
+    // Nettoyer la session
     sessionStorage.delete(sessionId);
 
-    // 🔧 RÉPONSE SANS le texte répétitif - juste le widget map
+    // 🔧 MESSAGE TRÈS COURT ET SIMPLE
     return {
-      fulfillmentText: `Here's the location of ${name} on the map:`, // 🔧 MESSAGE PLUS COURT
+      fulfillmentText: `📍 Location: ${name}`, // 🔧 MESSAGE MINIMALISTE
       payload: {
         flutter: {
           type: 'map_location',
           data: {
             attraction: attraction,
             coordinates: { latitude: lat, longitude: lng },
-            googleMapsUrl: googleMapsUrl,
-            appleMapsUrl: appleMapsUrl,
-            mapOptions: {
-              showDirections: true,
-              showStreetView: true,
-              showNearbyPlaces: true
-            }
-          },
-          actions: [
-            { type: 'open_google_maps', label: 'Open in Google Maps', icon: 'map' },
-            { type: 'open_apple_maps', label: 'Open in Apple Maps', icon: 'map' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'share_location', label: 'Share Location', icon: 'share' }
-          ]
+            googleMapsUrl: googleMapsUrl
+            // 🚫 SUPPRIMÉ: appleMapsUrl, mapOptions, actions complexes
+          }
+          // 🚫 SUPPRIMÉ: actions array
         }
       }
     };
