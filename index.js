@@ -284,10 +284,16 @@ async function processDialogflowResponse(queryResult, sessionId) {
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, cultural sites, natural wonders, and more."
         };
+         case 'Ask_Details_From_List':
+        const identifier = parameters['attraction-identifier'] || 
+                          parameters['attraction-name'] || 
+                          parameters['number'] ||
+                          parameters.name;
+        return await handleAttractionDetailsFromList(sessionId, identifier);
         
       default:
         return {
-          fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, cultural sites, or natural wonders.`
+          fulfillmentText: `Sorry, there was an error processing your request.`
         };
     }
   } catch (error) {
@@ -463,6 +469,81 @@ function determineAttractionType(attractionData) {
   }
 }
 
+function saveDisplayedAttractions(sessionId, attractions, category, cityName = null) {
+  const sessionData = getSessionData(sessionId) || {};
+  
+  saveSessionData(sessionId, {
+    ...sessionData,
+    displayedAttractions: attractions,
+    displayedCategory: category,
+    displayedCityName: cityName,
+    displayedTimestamp: Date.now()
+  });
+  
+  console.log(`💾 Saved ${attractions.length} displayed attractions for session ${sessionId}`);
+} 
+
+// Fonction pour récupérer une attraction par index ou nom depuis la liste affichée
+function getAttractionFromDisplayed(sessionId, identifier) {
+  const sessionData = getSessionData(sessionId);
+  
+  if (!sessionData || !sessionData.displayedAttractions) {
+    return { found: false, error: 'No attractions list available. Please ask for attractions first.' };
+  }
+
+  const attractions = sessionData.displayedAttractions;
+  
+  // Vérifier si l'identifiant est un nombre (index)
+  if (/^\d+$/.test(identifier.toString())) {
+    const index = parseInt(identifier) - 1; // L'utilisateur compte à partir de 1
+    
+    if (index >= 0 && index < attractions.length) {
+      return { 
+        found: true, 
+        attraction: attractions[index],
+        index: index + 1,
+        totalDisplayed: attractions.length
+      };
+    } else {
+      return { 
+        found: false, 
+        error: `Invalid position. Please choose a number between 1 and ${attractions.length}.`
+      };
+    }
+  }
+  
+  // Recherche par nom (insensible à la casse)
+  const searchName = identifier.toLowerCase().trim();
+  
+  // Recherche exacte d'abord
+  let foundAttraction = attractions.find(attr => 
+    attr.name.toLowerCase() === searchName
+  );
+  
+  // Si pas trouvé, recherche partielle
+  if (!foundAttraction) {
+    foundAttraction = attractions.find(attr => 
+      attr.name.toLowerCase().includes(searchName) ||
+      searchName.includes(attr.name.toLowerCase())
+    );
+  }
+  
+  if (foundAttraction) {
+    const index = attractions.findIndex(attr => attr.id_Location === foundAttraction.id_Location);
+    return { 
+      found: true, 
+      attraction: foundAttraction,
+      index: index + 1,
+      totalDisplayed: attractions.length
+    };
+  }
+  
+  return { 
+    found: false, 
+    error: `Attraction "${identifier}" not found in the current list. Please check the name or use a number (1-${attractions.length}).`
+  };
+}
+
 async function handleAllAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
@@ -589,6 +670,9 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
   const totalCount = allAttractions.length;
   
   if (totalCount <= ITEMS_PER_PAGE) {
+    // 🆕 Sauvegarder toutes les attractions affichées
+    saveDisplayedAttractions(sessionId, allAttractions, category, cityName);
+    
     const messagesByCategory = {
       'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet!`,
       'natural': `I found ${totalCount} beautiful natural attractions!`,
@@ -613,7 +697,8 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
           data: {
             attractions: allAttractions,
             count: totalCount,
-            cityName: cityName
+            cityName: cityName,
+            showDetailsHint: true // 🆕 Hint pour les détails
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -628,12 +713,19 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
     const remainingAttractions = allAttractions.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingAttractions.length;
     
+    // 🆕 Sauvegarder seulement les attractions de la première page
+    saveDisplayedAttractions(sessionId, firstPageAttractions, category, cityName);
+    
     saveSessionData(sessionId, {
       remainingAttractions,
       category,
       categoryDisplayName,
       cityName: cityName,
-      waitingForMoreResponse: true
+      waitingForMoreResponse: true,
+      // 🆕 Garder aussi les attractions affichées
+      displayedAttractions: firstPageAttractions,
+      displayedCategory: category,
+      displayedCityName: cityName
     });
 
     const messagesByCategory = {
@@ -664,7 +756,8 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
             totalCount: totalCount,
             remainingCount: remainingCount,
             cityName: cityName,
-            sendMoreMessage: true
+            sendMoreMessage: true,
+            showDetailsHint: true // 🆕 Hint pour les détails
           },
           actions: [
             { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -678,8 +771,15 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
 }
 
 // 🆕 FONCTION MODIFIÉE: sendAttractionDetailsText (sans coordonnées GPS)
-function sendAttractionDetailsText(attractionData, attractionType) {
-  let message = `**${attractionData.name}**\n\n`;
+function sendAttractionDetailsText(attractionData, attractionType, fromList = false, position = null) {
+  let message = `**${attractionData.name}**`;
+  
+  // 🆕 Ajouter info position si depuis liste
+  if (fromList && position) {
+    message += ` (Position #${position})`;
+  }
+  
+  message += `\n\n`;
   message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
   
   if (attractionData.description) {
@@ -688,9 +788,6 @@ function sendAttractionDetailsText(attractionData, attractionType) {
   
   message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
   message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
-  
-  // 🚫 SUPPRIMÉ : GPS coordinates ne sont plus affichées
-  // message += `🗺️ **GPS:** ${attractionData.latitude.toFixed(4)}, ${attractionData.longitude.toFixed(4)}\n`;
   
   // Ajouter les infos spécifiques selon le type
   switch (attractionType) {
@@ -729,7 +826,20 @@ async function handleShowMore(sessionId) {
 
   const { remainingAttractions, category, categoryDisplayName, cityName } = sessionData;
   
-  sessionStorage.delete(sessionId);
+  // 🆕 Combiner les attractions précédentes avec les nouvelles
+  const previousAttractions = sessionData.displayedAttractions || [];
+  const allDisplayedAttractions = [...previousAttractions, ...remainingAttractions];
+  
+  // 🆕 Sauvegarder toutes les attractions maintenant affichées
+  saveDisplayedAttractions(sessionId, allDisplayedAttractions, category, cityName);
+  
+  // Nettoyer les données de pagination mais garder les attractions affichées
+  saveSessionData(sessionId, {
+    displayedAttractions: allDisplayedAttractions,
+    displayedCategory: category,
+    displayedCityName: cityName,
+    displayedTimestamp: Date.now()
+  });
 
   const naturalResponse = cityName 
     ? `Perfect! Here are all the remaining attractions in ${cityName}:`
@@ -744,7 +854,8 @@ async function handleShowMore(sessionId) {
         data: {
           attractions: remainingAttractions,
           count: remainingAttractions.length,
-          cityName: cityName
+          cityName: cityName,
+          showDetailsHint: true // 🆕 Hint pour les détails
         },
         actions: [
           { type: 'view_details', label: 'View Details', icon: 'info' },
@@ -754,6 +865,62 @@ async function handleShowMore(sessionId) {
       }
     }
   };
+}
+
+async function handleAttractionDetailsFromList(sessionId, identifier) {
+  try {
+    console.log(`🔍 Searching for attraction details from list: ${identifier}`);
+    
+    const result = getAttractionFromDisplayed(sessionId, identifier);
+    
+    if (!result.found) {
+      return {
+        fulfillmentText: result.error
+      };
+    }
+    
+    const attractionData = result.attraction;
+    const attractionType = determineAttractionType(attractionData);
+    const position = result.index;
+    
+    console.log(`✅ Found attraction #${position}: ${attractionData.name} (${attractionType})`);
+
+    // 🆕 Sauvegarder les données pour le flux map (même logique que handleAttractionDetails)
+    saveSessionData(sessionId, {
+      attractionData: attractionData,
+      attractionType: attractionType,
+      waitingForDetailsText: true,
+      waitingForMapResponse: true,
+      attractionName: attractionData.name,
+      fromList: true, // 🆕 Flag pour indiquer que c'est depuis une liste
+      listPosition: position
+    });
+
+    // Premier message: juste les images (même logique que handleAttractionDetails)
+    return {
+      fulfillmentText: "",
+      payload: {
+        flutter: {
+          type: 'attraction_details',
+          category: attractionType,
+          data: {
+            attraction: attractionData,
+            attractionType: attractionType,
+            onlyImages: true,
+            fromList: true,
+            position: position
+          }
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ Error fetching attraction details from list for ${identifier}:`, error);
+    
+    return {
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about that attraction. Please try again.`
+    };
+  }
 }
 
 function handleDecline(sessionId) {
