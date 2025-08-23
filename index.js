@@ -302,6 +302,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
 // 🆕 NOUVEAUX HANDLERS POUR MAPS
 // ============================
 
+// 🔧 MODIFICATION dans handleShowAttractionOnMap
 async function handleShowAttractionOnMap(sessionId) {
   try {
     const sessionData = getSessionData(sessionId);
@@ -321,11 +322,12 @@ async function handleShowAttractionOnMap(sessionId) {
     const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
     const appleMapsUrl = `http://maps.apple.com/?q=${encodeURIComponent(name)}&ll=${lat},${lng}`;
     
-    // Nettoyer les données de session
+    // 🔧 NETTOYER COMPLÈTEMENT la session pour éviter les duplications
     sessionStorage.delete(sessionId);
 
+    // 🔧 RÉPONSE SANS le texte répétitif - juste le widget map
     return {
-      fulfillmentText: `Perfect! Here's the location of ${name}:`,
+      fulfillmentText: `Here's the location of ${name} on the map:`, // 🔧 MESSAGE PLUS COURT
       payload: {
         flutter: {
           type: 'map_location',
