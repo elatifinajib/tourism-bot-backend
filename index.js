@@ -268,13 +268,23 @@ async function processDialogflowResponse(queryResult, sessionId) {
       case 'Pagination_Decline':
         return handleDecline(sessionId);
       
+      case 'Ask_Attraction_Details':
+        const attractionName = parameters['attraction-name'] || parameters.name;
+        return await handleAttractionDetails(sessionId, attractionName);
+      
+      // 🆕 NOUVEAUX INTENTS POUR LES MAPS
+      case 'Show_Attraction_On_Map':
+      case 'Map_Request_Yes':
+        return await handleShowAttractionOnMap(sessionId);
+      
+      case 'Map_Request_No':
+        return handleMapDecline(sessionId);
+      
       case 'Default Welcome Intent':
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, cultural sites, natural wonders, and more."
         };
-      case 'Ask_Attraction_Details':
-        const attractionName = parameters['attraction-name'] || parameters.name;
-        return await handleAttractionDetails(sessionId, attractionName);
+        
       default:
         return {
           fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, cultural sites, or natural wonders.`
@@ -289,8 +299,79 @@ async function processDialogflowResponse(queryResult, sessionId) {
 }
 
 // ============================
+// 🆕 NOUVEAUX HANDLERS POUR MAPS
+// ============================
+
+async function handleShowAttractionOnMap(sessionId) {
+  try {
+    const sessionData = getSessionData(sessionId);
+    
+    if (!sessionData || !sessionData.attractionData) {
+      return {
+        fulfillmentText: "I don't have location information available. Please ask about a specific attraction first."
+      };
+    }
+
+    const attraction = sessionData.attractionData;
+    const lat = attraction.latitude;
+    const lng = attraction.longitude;
+    const name = attraction.name;
+    
+    // Créer les liens Maps
+    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
+    const appleMapsUrl = `http://maps.apple.com/?q=${encodeURIComponent(name)}&ll=${lat},${lng}`;
+    
+    // Nettoyer les données de session
+    sessionStorage.delete(sessionId);
+
+    return {
+      fulfillmentText: `Perfect! Here's the location of ${name}:`,
+      payload: {
+        flutter: {
+          type: 'map_location',
+          data: {
+            attraction: attraction,
+            coordinates: { latitude: lat, longitude: lng },
+            googleMapsUrl: googleMapsUrl,
+            appleMapsUrl: appleMapsUrl,
+            mapOptions: {
+              showDirections: true,
+              showStreetView: true,
+              showNearbyPlaces: true
+            }
+          },
+          actions: [
+            { type: 'open_google_maps', label: 'Open in Google Maps', icon: 'map' },
+            { type: 'open_apple_maps', label: 'Open in Apple Maps', icon: 'map' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'share_location', label: 'Share Location', icon: 'share' }
+          ]
+        }
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error showing attraction on map:', error);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve the location information right now."
+    };
+  }
+}
+
+function handleMapDecline(sessionId) {
+  // Nettoyer les données de session
+  if (sessionId) {
+    sessionStorage.delete(sessionId);
+  }
+  
+  return {
+    fulfillmentText: "No problem! Is there anything else you'd like to know about this attraction or would you like to explore other places? 😊"
+  };
+}
+
+// ============================
 // ATTRACTION HANDLERS
 // ============================
+
 async function handleAttractionDetails(sessionId, attractionName) {
   try {
     if (!attractionName) {
@@ -301,7 +382,6 @@ async function handleAttractionDetails(sessionId, attractionName) {
 
     console.log(`🔍 Fetching details for attraction: ${attractionName}`);
     
-    // Appel à l'endpoint pour récupérer les détails complets
     const response = await makeApiCall(
       `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
     );
@@ -312,24 +392,23 @@ async function handleAttractionDetails(sessionId, attractionName) {
       };
     }
 
-    const attractionData = response.data[0]; // Prendre le premier résultat
-    
-    // Déterminer le type d'attraction basé sur les propriétés présentes
+    const attractionData = response.data[0];
     const attractionType = determineAttractionType(attractionData);
     
     console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
 
-    // 🎯 STOCKER LES DONNÉES POUR LE DEUXIÈME MESSAGE
+    // 🆕 MODIFICATION: Sauvegarder les données pour le flux map
     saveSessionData(sessionId, {
       attractionData: attractionData,
       attractionType: attractionType,
       waitingForDetailsText: true,
+      waitingForMapResponse: true, // 🆕 NOUVEAU FLAG
       attractionName: attractionData.name
     });
 
-    // 🎯 PREMIER MESSAGE: JUSTE LES IMAGES
+    // Premier message: juste les images
     return {
-      fulfillmentText: "", // Pas de texte pour le premier message
+      fulfillmentText: "",
       payload: {
         flutter: {
           type: 'attraction_details',
@@ -337,7 +416,7 @@ async function handleAttractionDetails(sessionId, attractionName) {
           data: {
             attraction: attractionData,
             attractionType: attractionType,
-            onlyImages: true // Flag pour indiquer qu'on affiche que les images
+            onlyImages: true
           }
         }
       }
@@ -357,7 +436,6 @@ async function handleAttractionDetails(sessionId, attractionName) {
     };
   }
 }
-
 
 function determineAttractionType(attractionData) {
   // Vérifier les propriétés spécifiques pour déterminer le type
@@ -393,7 +471,6 @@ function determineAttractionType(attractionData) {
     }
   }
 }
-
 
 async function handleAllAttractions(sessionId) {
   try {
@@ -609,8 +686,8 @@ function handlePaginatedResponse(allAttractions, category, categoryDisplayName, 
   }
 }
 
+// 🆕 FONCTION MODIFIÉE: sendAttractionDetailsText (sans coordonnées GPS)
 function sendAttractionDetailsText(attractionData, attractionType) {
-  // Construire le message texte avec toutes les informations
   let message = `**${attractionData.name}**\n\n`;
   message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
   
@@ -620,7 +697,9 @@ function sendAttractionDetailsText(attractionData, attractionType) {
   
   message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
   message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
-  message += `🗺️ **GPS:** ${attractionData.latitude.toFixed(4)}, ${attractionData.longitude.toFixed(4)}\n`;
+  
+  // 🚫 SUPPRIMÉ : GPS coordinates ne sont plus affichées
+  // message += `🗺️ **GPS:** ${attractionData.latitude.toFixed(4)}, ${attractionData.longitude.toFixed(4)}\n`;
   
   // Ajouter les infos spécifiques selon le type
   switch (attractionType) {
@@ -642,8 +721,11 @@ function sendAttractionDetailsText(attractionData, attractionType) {
       break;
   }
   
+  // 🆕 NOUVEAU: Ajouter la question pour la carte à la fin
+  message += `\n🗺️ Would you like to see this attraction on the map?`;
+  
   return message;
-} 
+}
 
 async function handleShowMore(sessionId) {
   const sessionData = getSessionData(sessionId);
