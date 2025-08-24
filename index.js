@@ -82,6 +82,21 @@ async function getGoogleAccessToken() {
 }
 
 // ============================
+// DEBUG FUNCTION
+// ============================
+function debugSession(sessionId, action = '') {
+  const data = sessionStorage.get(sessionId);
+  console.log(`🐛 DEBUG SESSION [${action}] - ${sessionId}:`);
+  console.log(`   - Has data: ${!!data}`);
+  if (data) {
+    console.log(`   - waitingForMoreResponse: ${data.waitingForMoreResponse}`);
+    console.log(`   - itemType: ${data.itemType}`);
+    console.log(`   - category: ${data.category}`);
+    console.log(`   - remainingItems: ${data.remainingItems?.length || 0}`);
+  }
+}
+
+// ============================
 // UTILITY FUNCTIONS
 // ============================
 
@@ -145,13 +160,18 @@ async function tryMultipleCityVariants(cityName) {
 }
 
 // ============================
-// SESSION MANAGEMENT
+// SESSION MANAGEMENT (VERSION AMÉLIORÉE)
 // ============================
 
 function saveSessionData(sessionId, data) {
   const newData = { ...data, timestamp: Date.now() };
   sessionStorage.set(sessionId, newData);
-  console.log(`💾 Session data saved for ${sessionId}`);
+  console.log(`💾 Session data saved for ${sessionId}:`, {
+    waitingForMoreResponse: data.waitingForMoreResponse,
+    itemType: data.itemType,
+    category: data.category,
+    remainingItemsCount: data.remainingItems ? data.remainingItems.length : 0
+  });
 }
 
 function getSessionData(sessionId) {
@@ -160,6 +180,7 @@ function getSessionData(sessionId) {
   if (data) {
     // Expire after 1 hour
     if (Date.now() - data.timestamp > 60 * 60 * 1000) {
+      console.log(`🕐 Session ${sessionId} expired`);
       sessionStorage.delete(sessionId);
       return null;
     }
@@ -185,11 +206,14 @@ app.get('/', (req, res) => {
   });
 });
 
-// Main proxy endpoint for Flutter
+// Main proxy endpoint for Flutter (VERSION CORRIGÉE)
 app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     console.log(`🔄 Processing: "${message}" (session: ${sessionId})`);
+    
+    // Debug session avant traitement
+    debugSession(sessionId, 'BEFORE_PROCESSING');
     
     if (googleAuth) {
       const token = await getGoogleAccessToken();
@@ -214,7 +238,17 @@ app.post('/dialogflow-proxy', async (req, res) => {
       });
 
       const queryResult = dialogflowResponse.data.queryResult;
+      
+      // 🔧 LOGGING AMÉLIORÉ POUR DEBUG
+      console.log(`🎯 Intent: ${queryResult.intent.displayName}`);
+      console.log(`📋 Parameters:`, queryResult.parameters);
+      console.log(`🔗 Input Contexts:`, queryResult.outputContexts?.length || 0);
+      
       const response = await processDialogflowResponse(queryResult, sessionId);
+      
+      // Debug session après traitement
+      debugSession(sessionId, 'AFTER_PROCESSING');
+      
       return res.json(response);
       
     } else {
@@ -240,6 +274,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
   const parameters = queryResult.parameters || {};
   
   console.log(`🎯 Processing intent: ${intentName}`);
+  console.log(`📋 Parameters:`, parameters);
   
   try {
     switch (intentName) {
@@ -297,7 +332,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
         const amenityName = parameters['amenity-name'] || parameters.name;
         return await handleAmenityDetails(sessionId, amenityName);
       
-      // ===== PAGINATION INTENTS =====
+      // ===== PAGINATION INTENTS (CORRIGÉ) =====
       case 'Pagination_ShowMore':
         return await handleShowMore(sessionId);
       
@@ -319,6 +354,20 @@ async function processDialogflowResponse(queryResult, sessionId) {
         };
         
       default:
+        // 🔧 GESTION AMÉLIORÉE DES INTENTS NON RECONNUS
+        console.log(`⚠️ Unhandled intent: ${intentName}`);
+        
+        // Vérifier si on a des données de session en attente
+        const sessionData = getSessionData(sessionId);
+        if (sessionData && sessionData.waitingForMoreResponse) {
+          console.log('🔄 User might want to see more items, redirecting to handleShowMore');
+          return await handleShowMore(sessionId);
+        }
+        if (sessionData && (sessionData.waitingForMapResponse || sessionData.waitingForDetailsText)) {
+          console.log('🗺️ User might want to see on map');
+          return await handleShowOnMap(sessionId);
+        }
+        
         return {
           fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, amenities, restaurants, or hotels.`
         };
@@ -327,6 +376,229 @@ async function processDialogflowResponse(queryResult, sessionId) {
     console.error(`❌ Error processing intent ${intentName}:`, error);
     return {
       fulfillmentText: "Sorry, there was an error processing your request."
+    };
+  }
+}
+
+// ============================
+// PAGINATION RESPONSE HANDLER (CORRIGÉ)
+// ============================
+function handlePaginatedResponse(allItems, category, categoryDisplayName, sessionId, cityName = null, itemType = 'attraction') {
+  const ITEMS_PER_PAGE = 10;
+  const totalCount = allItems.length;
+  
+  console.log(`📊 handlePaginatedResponse: ${totalCount} ${itemType}s, category: ${category}`);
+  
+  if (totalCount <= ITEMS_PER_PAGE) {
+    // Pas de pagination nécessaire
+    const messagesByCategory = {
+      // Attractions
+      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet!`,
+      'natural': `I found ${totalCount} beautiful natural attractions!`,
+      'cultural': `I found ${totalCount} fascinating cultural attractions!`,
+      'historical': `I found ${totalCount} remarkable historical attractions!`,
+      'artificial': `I found ${totalCount} impressive artificial attractions!`,
+      
+      // Amenities
+      'all_amenities': `I found ${totalCount} great amenities in Draa-Tafilalet!`,
+      'restaurants': `I found ${totalCount} wonderful restaurants!`,
+      'hotels': `I found ${totalCount} comfortable hotels!`,
+      'lodges': `I found ${totalCount} beautiful lodges!`,
+      'guest_houses': `I found ${totalCount} cozy guest houses!`,
+      'camping': `I found ${totalCount} great camping sites!`,
+      'cafes': `I found ${totalCount} lovely cafes!`
+    };
+
+    let displayMessage;
+    if (cityName) {
+      displayMessage = `I found ${totalCount} wonderful ${itemType === 'amenity' ? 'amenities' : 'attractions'} in ${cityName}!`;
+    } else {
+      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+    }
+
+    return {
+      fulfillmentText: displayMessage,
+      payload: {
+        flutter: {
+          type: itemType === 'amenity' ? 'amenities_list' : 'attractions_list',
+          category: category,
+          data: {
+            [itemType === 'amenity' ? 'amenities' : 'attractions']: allItems,
+            count: totalCount,
+            cityName: cityName,
+            itemType: itemType
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+  } else {
+    // 🔧 PAGINATION NÉCESSAIRE - LOGIQUE CORRIGÉE
+    const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
+    const remainingItems = allItems.slice(ITEMS_PER_PAGE);
+    const remainingCount = remainingItems.length;
+    
+    console.log(`📄 Pagination: Showing ${firstPageItems.length}, ${remainingCount} remaining`);
+    
+    // 🔧 SAUVEGARDER CORRECTEMENT LES DONNÉES DE SESSION
+    const sessionData = {
+      remainingItems: remainingItems,
+      category: category,
+      categoryDisplayName: categoryDisplayName,
+      cityName: cityName,
+      waitingForMoreResponse: true, // ✅ CRITIQUE
+      itemType: itemType,
+      totalFound: totalCount,
+      timestamp: Date.now()
+    };
+    
+    saveSessionData(sessionId, sessionData);
+    
+    // Vérifier que les données ont été sauvées
+    const verifyData = getSessionData(sessionId);
+    console.log(`✅ Session data verified: waitingForMoreResponse = ${verifyData?.waitingForMoreResponse}`);
+
+    const messagesByCategory = {
+      // Attractions
+      'all': `I found ${totalCount} amazing attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'natural': `I found ${totalCount} natural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'cultural': `I found ${totalCount} cultural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'historical': `I found ${totalCount} historical attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      'artificial': `I found ${totalCount} artificial attractions! Here are the first ${ITEMS_PER_PAGE}:`,
+      
+      // Amenities  
+      'all_amenities': `I found ${totalCount} amenities! Here are the first ${ITEMS_PER_PAGE}:`,
+      'restaurants': `I found ${totalCount} restaurants! Here are the first ${ITEMS_PER_PAGE}:`,
+      'hotels': `I found ${totalCount} hotels! Here are the first ${ITEMS_PER_PAGE}:`,
+      'lodges': `I found ${totalCount} lodges! Here are the first ${ITEMS_PER_PAGE}:`,
+      'guest_houses': `I found ${totalCount} guest houses! Here are the first ${ITEMS_PER_PAGE}:`,
+      'camping': `I found ${totalCount} camping sites! Here are the first ${ITEMS_PER_PAGE}:`,
+      'cafes': `I found ${totalCount} cafes! Here are the first ${ITEMS_PER_PAGE}:`
+    };
+
+    let displayMessage;
+    if (cityName) {
+      displayMessage = `I found ${totalCount} ${itemType === 'amenity' ? 'amenities' : 'attractions'} in ${cityName}! Here are the first ${ITEMS_PER_PAGE}:`;
+    } else {
+      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+    }
+
+    return {
+      fulfillmentText: displayMessage,
+      payload: {
+        flutter: {
+          type: itemType === 'amenity' ? 'amenities_list_with_more' : 'attractions_list_with_more',
+          category: category,
+          data: {
+            [itemType === 'amenity' ? 'amenities' : 'attractions']: firstPageItems,
+            count: firstPageItems.length,
+            hasMore: true,
+            totalCount: totalCount,
+            remainingCount: remainingCount,
+            cityName: cityName,
+            sendMoreMessage: true,
+            itemType: itemType
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+  }
+}
+
+// ============================
+// HANDLE SHOW MORE (VERSION CORRIGÉE)
+// ============================
+async function handleShowMore(sessionId) {
+  console.log(`🔍 handleShowMore called for session: ${sessionId}`);
+  
+  debugSession(sessionId, 'HANDLE_SHOW_MORE');
+  
+  const sessionData = getSessionData(sessionId);
+  
+  if (!sessionData) {
+    console.log(`❌ No session data found for ${sessionId}`);
+    return {
+      fulfillmentText: "I don't have any additional items to show right now. Please ask me about attractions or amenities first."
+    };
+  }
+
+  if (!sessionData.waitingForMoreResponse) {
+    console.log(`❌ Not waiting for more response. Current state: ${JSON.stringify(sessionData)}`);
+    return {
+      fulfillmentText: "I'm not currently showing you a list that has more items. Please ask me about attractions or amenities first."
+    };
+  }
+
+  if (!sessionData.remainingItems || sessionData.remainingItems.length === 0) {
+    console.log(`❌ No remaining items found`);
+    return {
+      fulfillmentText: "I don't have any additional items to show."
+    };
+  }
+
+  const { remainingItems, category, categoryDisplayName, cityName, itemType } = sessionData;
+  
+  console.log(`✅ Showing ${remainingItems.length} more ${itemType}s of category: ${category}`);
+  
+  // Nettoyer la session
+  sessionStorage.delete(sessionId);
+
+  const itemLabel = itemType === 'amenity' ? 'amenities' : 'attractions';
+  
+  const naturalResponse = cityName 
+    ? `Perfect! Here are all the remaining ${itemLabel} in ${cityName}:`
+    : `Perfect! Here are all the remaining ${categoryDisplayName} ${itemLabel}:`;
+
+  return {
+    fulfillmentText: naturalResponse,
+    payload: {
+      flutter: {
+        type: itemType === 'amenity' ? 'amenities_list' : 'attractions_list',
+        category: category,
+        data: {
+          [itemType === 'amenity' ? 'amenities' : 'attractions']: remainingItems,
+          count: remainingItems.length,
+          cityName: cityName,
+          itemType: itemType
+        },
+        actions: [
+          { type: 'view_details', label: 'View Details', icon: 'info' },
+          { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+          { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+        ]
+      }
+    }
+  };
+}
+
+// ============================
+// HANDLE DECLINE (VERSION CORRIGÉE)
+// ============================
+function handleDecline(sessionId) {
+  console.log(`🚫 handleDecline called for session: ${sessionId}`);
+  
+  const sessionData = getSessionData(sessionId);
+  
+  if (sessionData && sessionData.waitingForMoreResponse) {
+    console.log(`✅ Declining pagination request`);
+    sessionStorage.delete(sessionId);
+    
+    return {
+      fulfillmentText: "No problem! I'm here whenever you need help discovering attractions or amenities in Draa-Tafilalet. What else would you like to know? 😊"
+    };
+  } else {
+    console.log(`ℹ️ General decline response`);
+    return {
+      fulfillmentText: "Okay, no problem! Is there anything else I can help you with? 😊"
     };
   }
 }
@@ -588,167 +860,8 @@ function determineAmenityType(amenityData) {
 }
 
 // ============================
-// MAP HANDLERS (Updated for both attractions and amenities)
+// ATTRACTION HANDLERS
 // ============================
-
-async function handleShowOnMap(sessionId) {
-  try {
-    const sessionData = getSessionData(sessionId);
-    
-    if (!sessionData) {
-      return {
-        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
-      };
-    }
-
-    let item, lat, lng, name;
-    
-    // Check if it's attraction or amenity
-    if (sessionData.attractionData) {
-      item = sessionData.attractionData;
-      lat = item.latitude;
-      lng = item.longitude;
-      name = item.name;
-    } else if (sessionData.amenityData) {
-      item = sessionData.amenityData;
-      lat = item.latitude;
-      lng = item.longitude;
-      name = item.name;
-    } else {
-      return {
-        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
-      };
-    }
-    
-    // Créer le lien Google Maps
-    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
-    
-    // Nettoyer la session
-    sessionStorage.delete(sessionId);
-
-    return {
-      fulfillmentText: `Here you can find ${name} on the map: `,
-      payload: {
-        flutter: {
-          type: 'map_location',
-          data: {
-            item: item,
-            coordinates: { latitude: lat, longitude: lng },
-            googleMapsUrl: googleMapsUrl
-          }
-        }
-      }
-    };
-  } catch (error) {
-    console.error('❌ Error showing on map:', error);
-    return {
-      fulfillmentText: "Sorry, I couldn't retrieve the location information right now."
-    };
-  }
-}
-
-// ============================
-// ATTRACTION HANDLERS (Existing)
-// ============================
-
-async function handleAttractionDetails(sessionId, attractionName) {
-  try {
-    if (!attractionName) {
-      return {
-        fulfillmentText: "Please tell me which attraction you'd like to know more about."
-      };
-    }
-
-    console.log(`🔍 Fetching details for attraction: ${attractionName}`);
-    
-    const response = await makeApiCall(
-      `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
-    );
-
-    if (!response.data || response.data.length === 0) {
-      return {
-        fulfillmentText: `I couldn't find detailed information about "${attractionName}". Please check the spelling or try another attraction name.`
-      };
-    }
-
-    const attractionData = response.data[0];
-    const attractionType = determineAttractionType(attractionData);
-    
-    console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
-
-    // Sauvegarder les données pour le flux map
-    saveSessionData(sessionId, {
-      attractionData: attractionData,
-      attractionType: attractionType,
-      waitingForDetailsText: true,
-      waitingForMapResponse: true,
-      attractionName: attractionData.name
-    });
-
-    // Premier message: juste les images
-    return {
-      fulfillmentText: "",
-      payload: {
-        flutter: {
-          type: 'attraction_details',
-          category: attractionType,
-          data: {
-            attraction: attractionData,
-            attractionType: attractionType,
-            onlyImages: true
-          }
-        }
-      }
-    };
-
-  } catch (error) {
-    console.error(`❌ Error fetching attraction details for ${attractionName}:`, error);
-    
-    if (error.response?.status === 404) {
-      return {
-        fulfillmentText: `I couldn't find an attraction named "${attractionName}". Please check the name or try searching for something similar.`
-      };
-    }
-    
-    return {
-      fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
-    };
-  }
-}
-
-function determineAttractionType(attractionData) {
-  // Vérifier les propriétés spécifiques pour déterminer le type
-  if (attractionData.hasOwnProperty('protectedArea')) {
-    return 'natural';
-  } else if (attractionData.hasOwnProperty('style') && attractionData.hasOwnProperty('yearBuild')) {
-    if (attractionData.hasOwnProperty('historicalPeriod') || attractionData.hasOwnProperty('dynastyName')) {
-      return 'historical';
-    } else {
-      return 'cultural';
-    }
-  } else if (attractionData.hasOwnProperty('yearBuild') && !attractionData.hasOwnProperty('style')) {
-    return 'artificial';
-  } else if (attractionData.hasOwnProperty('style') && !attractionData.hasOwnProperty('yearBuild')) {
-    return 'historical';
-  } else {
-    // Fallback - analyser le nom ou la description
-    const name = (attractionData.name || '').toLowerCase();
-    const description = (attractionData.description || '').toLowerCase();
-    
-    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
-        description.includes('natural') || description.includes('nature')) {
-      return 'natural';
-    } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
-               description.includes('cultural') || description.includes('heritage')) {
-      return 'cultural';
-    } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
-               description.includes('historical') || description.includes('ancient')) {
-      return 'historical';
-    } else {
-      return 'artificial';
-    }
-  }
-}
 
 async function handleAllAttractions(sessionId) {
   try {
@@ -867,175 +980,163 @@ async function handleAttractionsByCity(sessionId, cityName) {
   }
 }
 
-// ============================
-// PAGINATION HANDLERS (Updated for both types)
-// ============================
-
-function handlePaginatedResponse(allItems, category, categoryDisplayName, sessionId, cityName = null, itemType = 'attraction') {
-  const ITEMS_PER_PAGE = 10;
-  const totalCount = allItems.length;
-  
-  if (totalCount <= ITEMS_PER_PAGE) {
-    const messagesByCategory = {
-      // Attractions messages
-      'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet!`,
-      'natural': `I found ${totalCount} beautiful natural attractions!`,
-      'cultural': `I found ${totalCount} fascinating cultural attractions!`,
-      'historical': `I found ${totalCount} remarkable historical attractions!`,
-      'artificial': `I found ${totalCount} impressive artificial attractions!`,
-      
-      // Amenities messages
-      'all_amenities': `I found ${totalCount} great amenities in Draa-Tafilalet!`,
-      'restaurants': `I found ${totalCount} wonderful restaurants!`,
-      'hotels': `I found ${totalCount} comfortable hotels!`,
-      'lodges': `I found ${totalCount} beautiful lodges!`,
-      'guest_houses': `I found ${totalCount} cozy guest houses!`,
-      'camping': `I found ${totalCount} great camping sites!`,
-      'cafes': `I found ${totalCount} lovely cafes!`
-    };
-
-    let displayMessage;
-    if (cityName) {
-      displayMessage = `I found ${totalCount} wonderful ${itemType === 'amenity' ? 'amenities' : 'attractions'} in ${cityName}!`;
-    } else {
-      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
+async function handleAttractionDetails(sessionId, attractionName) {
+  try {
+    if (!attractionName) {
+      return {
+        fulfillmentText: "Please tell me which attraction you'd like to know more about."
+      };
     }
 
-    return {
-      fulfillmentText: displayMessage,
-      payload: {
-        flutter: {
-          type: itemType === 'amenity' ? 'amenities_list' : 'attractions_list',
-          category: category,
-          data: {
-            [itemType === 'amenity' ? 'amenities' : 'attractions']: allItems,
-            count: totalCount,
-            cityName: cityName,
-            itemType: itemType
-          },
-          actions: [
-            { type: 'view_details', label: 'View Details', icon: 'info' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-          ]
-        }
-      }
-    };
-  } else {
-    const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
-    const remainingItems = allItems.slice(ITEMS_PER_PAGE);
-    const remainingCount = remainingItems.length;
+    console.log(`🔍 Fetching details for attraction: ${attractionName}`);
     
+    const response = await makeApiCall(
+      `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
+    );
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: `I couldn't find detailed information about "${attractionName}". Please check the spelling or try another attraction name.`
+      };
+    }
+
+    const attractionData = response.data[0];
+    const attractionType = determineAttractionType(attractionData);
+    
+    console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
+
+    // Sauvegarder les données pour le flux map
     saveSessionData(sessionId, {
-      remainingItems,
-      category,
-      categoryDisplayName,
-      cityName: cityName,
-      waitingForMoreResponse: true,
-      itemType: itemType
+      attractionData: attractionData,
+      attractionType: attractionType,
+      waitingForDetailsText: true,
+      waitingForMapResponse: true,
+      attractionName: attractionData.name
     });
 
-    const messagesByCategory = {
-      // Attractions messages
-      'all': `I found ${totalCount} amazing attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      'natural': `I found ${totalCount} natural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      'cultural': `I found ${totalCount} cultural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      'historical': `I found ${totalCount} historical attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      'artificial': `I found ${totalCount} artificial attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      
-      // Amenities messages
-      'all_amenities': `I found ${totalCount} amenities! Here are the first ${ITEMS_PER_PAGE}:`,
-      'restaurants': `I found ${totalCount} restaurants! Here are the first ${ITEMS_PER_PAGE}:`,
-      'hotels': `I found ${totalCount} hotels! Here are the first ${ITEMS_PER_PAGE}:`,
-      'lodges': `I found ${totalCount} lodges! Here are the first ${ITEMS_PER_PAGE}:`,
-      'guest_houses': `I found ${totalCount} guest houses! Here are the first ${ITEMS_PER_PAGE}:`,
-      'camping': `I found ${totalCount} camping sites! Here are the first ${ITEMS_PER_PAGE}:`,
-      'cafes': `I found ${totalCount} cafes! Here are the first ${ITEMS_PER_PAGE}:`
-    };
-
-    let displayMessage;
-    if (cityName) {
-      displayMessage = `I found ${totalCount} ${itemType === 'amenity' ? 'amenities' : 'attractions'} in ${cityName}! Here are the first ${ITEMS_PER_PAGE}:`;
-    } else {
-      displayMessage = messagesByCategory[category] || messagesByCategory['all'];
-    }
-
+    // Premier message: juste les images
     return {
-      fulfillmentText: displayMessage,
+      fulfillmentText: "",
       payload: {
         flutter: {
-          type: itemType === 'amenity' ? 'amenities_list_with_more' : 'attractions_list_with_more',
-          category: category,
+          type: 'attraction_details',
+          category: attractionType,
           data: {
-            [itemType === 'amenity' ? 'amenities' : 'attractions']: firstPageItems,
-            count: firstPageItems.length,
-            hasMore: true,
-            totalCount: totalCount,
-            remainingCount: remainingCount,
-            cityName: cityName,
-            sendMoreMessage: true,
-            itemType: itemType
-          },
-          actions: [
-            { type: 'view_details', label: 'View Details', icon: 'info' },
-            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-          ]
+            attraction: attractionData,
+            attractionType: attractionType,
+            onlyImages: true
+          }
         }
       }
     };
-  }
-}
 
-async function handleShowMore(sessionId) {
-  const sessionData = getSessionData(sessionId);
-  
-  if (!sessionData || !sessionData.remainingItems || sessionData.remainingItems.length === 0) {
+  } catch (error) {
+    console.error(`❌ Error fetching attraction details for ${attractionName}:`, error);
+    
+    if (error.response?.status === 404) {
+      return {
+        fulfillmentText: `I couldn't find an attraction named "${attractionName}". Please check the name or try searching for something similar.`
+      };
+    }
+    
     return {
-      fulfillmentText: "I don't have any additional items to show right now."
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
     };
   }
-
-  const { remainingItems, category, categoryDisplayName, cityName, itemType } = sessionData;
-  
-  sessionStorage.delete(sessionId);
-
-  const itemLabel = itemType === 'amenity' ? 'amenities' : 'attractions';
-  
-  const naturalResponse = cityName 
-    ? `Perfect! Here are all the remaining ${itemLabel} in ${cityName}:`
-    : `Perfect! Here are all the remaining ${categoryDisplayName} ${itemLabel}:`;
-
-  return {
-    fulfillmentText: naturalResponse,
-    payload: {
-      flutter: {
-        type: itemType === 'amenity' ? 'amenities_list' : 'attractions_list',
-        category: category,
-        data: {
-          [itemType === 'amenity' ? 'amenities' : 'attractions']: remainingItems,
-          count: remainingItems.length,
-          cityName: cityName,
-          itemType: itemType
-        },
-        actions: [
-          { type: 'view_details', label: 'View Details', icon: 'info' },
-          { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
-          { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
-        ]
-      }
-    }
-  };
 }
 
-function handleDecline(sessionId) {
-  if (sessionId) {
-    sessionStorage.delete(sessionId);
+function determineAttractionType(attractionData) {
+  // Vérifier les propriétés spécifiques pour déterminer le type
+  if (attractionData.hasOwnProperty('protectedArea')) {
+    return 'natural';
+  } else if (attractionData.hasOwnProperty('style') && attractionData.hasOwnProperty('yearBuild')) {
+    if (attractionData.hasOwnProperty('historicalPeriod') || attractionData.hasOwnProperty('dynastyName')) {
+      return 'historical';
+    } else {
+      return 'cultural';
+    }
+  } else if (attractionData.hasOwnProperty('yearBuild') && !attractionData.hasOwnProperty('style')) {
+    return 'artificial';
+  } else if (attractionData.hasOwnProperty('style') && !attractionData.hasOwnProperty('yearBuild')) {
+    return 'historical';
+  } else {
+    // Fallback - analyser le nom ou la description
+    const name = (attractionData.name || '').toLowerCase();
+    const description = (attractionData.description || '').toLowerCase();
+    
+    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
+        description.includes('natural') || description.includes('nature')) {
+      return 'natural';
+    } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
+               description.includes('cultural') || description.includes('heritage')) {
+      return 'cultural';
+    } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
+               description.includes('historical') || description.includes('ancient')) {
+      return 'historical';
+    } else {
+      return 'artificial';
+    }
   }
-  
-  return {
-    fulfillmentText: "No problem! I'm here whenever you need help discovering attractions or amenities in Draa-Tafilalet. Just ask me anytime! 😊"
-  };
+}
+
+// ============================
+// MAP HANDLERS
+// ============================
+
+async function handleShowOnMap(sessionId) {
+  try {
+    const sessionData = getSessionData(sessionId);
+    
+    if (!sessionData) {
+      return {
+        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
+      };
+    }
+
+    let item, lat, lng, name;
+    
+    // Check if it's attraction or amenity
+    if (sessionData.attractionData) {
+      item = sessionData.attractionData;
+      lat = item.latitude;
+      lng = item.longitude;
+      name = item.name;
+    } else if (sessionData.amenityData) {
+      item = sessionData.amenityData;
+      lat = item.latitude;
+      lng = item.longitude;
+      name = item.name;
+    } else {
+      return {
+        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
+      };
+    }
+    
+    // Créer le lien Google Maps
+    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
+    
+    // Nettoyer la session
+    sessionStorage.delete(sessionId);
+
+    return {
+      fulfillmentText: `Here you can find ${name} on the map: `,
+      payload: {
+        flutter: {
+          type: 'map_location',
+          data: {
+            item: item,
+            coordinates: { latitude: lat, longitude: lng },
+            googleMapsUrl: googleMapsUrl
+          }
+        }
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error showing on map:', error);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve the location information right now."
+    };
+  }
 }
 
 function handleMapDecline(sessionId) {
@@ -1050,127 +1151,42 @@ function handleMapDecline(sessionId) {
 }
 
 // ============================
-// GENERATE TEXT FOR DETAILS
+// DEBUG ENDPOINTS
 // ============================
 
-function sendAttractionDetailsText(attractionData, attractionType) {
-  let message = `**${attractionData.name}**\n\n`;
-  message += `📍 **Location:** ${attractionData.cityName}, ${attractionData.countryName}\n\n`;
-  
-  if (attractionData.description) {
-    message += `📝 **Description:**\n${attractionData.description}\n\n`;
-  }
-  
-  message += `💰 **Entry Fee:** ${attractionData.entryFre == 0 ? 'Free' : attractionData.entryFre + ' MAD'}\n`;
-  message += `🎯 **Guided Tours:** ${attractionData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
-  
-  // Ajouter les infos spécifiques selon le type
-  switch (attractionType) {
-    case 'natural':
-      if (attractionData.protectedArea !== undefined) {
-        message += `🌿 **Protected Area:** ${attractionData.protectedArea ? 'Yes - Protected Natural Site' : 'No'}\n`;
-      }
-      break;
-      
-    case 'cultural':
-    case 'historical':
-    case 'artificial':
-      if (attractionData.yearBuild) {
-        message += `📅 **Year Built:** ${attractionData.yearBuild}\n`;
-      }
-      if (attractionData.style) {
-        message += `🏛️ **Architectural Style:** ${attractionData.style}\n`;
-      }
-      break;
-  }
-  
-  message += `\n🗺️ Would you like to see this attraction on the map?`;
-  
-  return message;
-}
+app.get('/debug/session/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const data = getSessionData(sessionId);
+  res.json({
+    sessionId,
+    hasData: !!data,
+    data: data
+  });
+});
 
-function sendAmenityDetailsText(amenityData, amenityType) {
-  let message = `**${amenityData.name}**\n\n`;
-  message += `📍 **Location:** ${amenityData.cityName}, ${amenityData.countryName}\n\n`;
+app.get('/debug/sessions', (req, res) => {
+  const sessions = Array.from(sessionStorage.keys()).map(key => ({
+    sessionId: key,
+    data: sessionStorage.get(key)
+  }));
   
-  if (amenityData.description) {
-    message += `📝 **Description:**\n${amenityData.description}\n\n`;
+  res.json({
+    totalSessions: sessions.length,
+    sessions: sessions
+  });
+});
+
+app.delete('/debug/session/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const existed = sessionStorage.has(sessionId);
+  
+  if (existed) {
+    sessionStorage.delete(sessionId);
+    res.json({ success: true, message: `Session ${sessionId} deleted` });
+  } else {
+    res.json({ success: false, message: `Session ${sessionId} not found` });
   }
-  
-  message += `💰 **Price:** ${amenityData.price == 0 ? 'Free' : amenityData.price + ' MAD'}\n`;
-  message += `⏰ **Opening Hours:** ${amenityData.openingHours || 'Not specified'}\n`;
-  message += `✅ **Available:** ${amenityData.available ? 'Yes' : 'No'}\n`;
-  
-  // Ajouter les infos spécifiques selon le type
-  switch (amenityType) {
-    case 'restaurant':
-      if (amenityData.menu) {
-        message += `🍽️ **Menu:** ${amenityData.menu}\n`;
-      }
-      if (amenityData.typeCuisine) {
-        message += `🍴 **Cuisine Type:** ${amenityData.typeCuisine}\n`;
-      }
-      break;
-      
-    case 'hotel':
-      if (amenityData.numberStars) {
-        message += `⭐ **Stars:** ${amenityData.numberStars}\n`;
-      }
-      if (amenityData.numberOfRooms) {
-        message += `🏠 **Number of Rooms:** ${amenityData.numberOfRooms}\n`;
-      }
-      if (amenityData.hasSwimmingPool !== undefined) {
-        message += `🏊 **Swimming Pool:** ${amenityData.hasSwimmingPool ? 'Yes' : 'No'}\n`;
-      }
-      break;
-      
-    case 'lodge':
-      if (amenityData.viewPanoramic !== undefined) {
-        message += `🏔️ **Panoramic View:** ${amenityData.viewPanoramic ? 'Yes' : 'No'}\n`;
-      }
-      if (amenityData.closeNature !== undefined) {
-        message += `🌿 **Close to Nature:** ${amenityData.closeNature ? 'Yes' : 'No'}\n`;
-      }
-      break;
-      
-    case 'guest_house':
-      if (amenityData.numberRooms) {
-        message += `🏠 **Number of Rooms:** ${amenityData.numberRooms}\n`;
-      }
-      if (amenityData.breakfastIncluded !== undefined) {
-        message += `🥐 **Breakfast Included:** ${amenityData.breakfastIncluded ? 'Yes' : 'No'}\n`;
-      }
-      break;
-      
-    case 'camping':
-      if (amenityData.capacity) {
-        message += `👥 **Capacity:** ${amenityData.capacity} people\n`;
-      }
-      if (amenityData.hasWaterSupply !== undefined) {
-        message += `💧 **Water Supply:** ${amenityData.hasWaterSupply ? 'Yes' : 'No'}\n`;
-      }
-      if (amenityData.electricityAvailability !== undefined) {
-        message += `⚡ **Electricity:** ${amenityData.electricityAvailability ? 'Yes' : 'No'}\n`;
-      }
-      if (amenityData.sanitaryAvailability !== undefined) {
-        message += `🚿 **Sanitary Facilities:** ${amenityData.sanitaryAvailability ? 'Yes' : 'No'}\n`;
-      }
-      break;
-      
-    case 'cafe':
-      if (amenityData.menu) {
-        message += `☕ **Menu:** ${amenityData.menu}\n`;
-      }
-      if (amenityData.wifiAvailable !== undefined) {
-        message += `📶 **WiFi:** ${amenityData.wifiAvailable ? 'Yes' : 'No'}\n`;
-      }
-      break;
-  }
-  
-  message += `\n🗺️ Would you like to see this amenity on the map?`;
-  
-  return message;
-}
+});
 
 // ============================
 // ERROR HANDLING
