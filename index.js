@@ -29,7 +29,7 @@ let tokenExpiry = null;
 async function initializeGoogleAuth() {
   try {
     console.log('🔑 Initializing Google Auth...');
-    
+
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
       const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
       const { GoogleAuth } = require('google-auth-library');
@@ -105,7 +105,7 @@ async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
     try {
       const response = await axios.get(url, {
         timeout: timeoutMs,
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Tourism-Bot/1.0'
         }
@@ -113,7 +113,7 @@ async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
       return response;
     } catch (error) {
       if (attempt === maxRetries) throw error;
-      
+
       const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
@@ -139,10 +139,10 @@ async function tryMultipleCityVariants(cityName) {
       );
 
       if (response.data && response.data.length > 0) {
-        const newResults = response.data.filter(newItem => 
+        const newResults = response.data.filter(newItem =>
           !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
         );
-        
+
         allResults = [...allResults, ...newResults];
         successfulVariant = variant;
       }
@@ -176,7 +176,7 @@ function saveSessionData(sessionId, data) {
 
 function getSessionData(sessionId) {
   const data = sessionStorage.get(sessionId);
-  
+
   if (data) {
     // Expire after 1 hour
     if (Date.now() - data.timestamp > 60 * 60 * 1000) {
@@ -185,7 +185,7 @@ function getSessionData(sessionId) {
       return null;
     }
   }
-  
+
   return data;
 }
 
@@ -211,10 +211,10 @@ app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     console.log(`🔄 Processing: "${message}" (session: ${sessionId})`);
-    
+
     // Debug session avant traitement
     debugSession(sessionId, 'BEFORE_PROCESSING');
-    
+
     if (googleAuth) {
       const token = await getGoogleAccessToken();
       const sessionPath = `projects/${PROJECT_ID}/agent/sessions/${sessionId}`;
@@ -238,25 +238,25 @@ app.post('/dialogflow-proxy', async (req, res) => {
       });
 
       const queryResult = dialogflowResponse.data.queryResult;
-      
+
       // 🔧 LOGGING AMÉLIORÉ POUR DEBUG
       console.log(`🎯 Intent: ${queryResult.intent.displayName}`);
       console.log(`📋 Parameters:`, queryResult.parameters);
       console.log(`🔗 Input Contexts:`, queryResult.outputContexts?.length || 0);
-      
+
       const response = await processDialogflowResponse(queryResult, sessionId);
-      
+
       // Debug session après traitement
       debugSession(sessionId, 'AFTER_PROCESSING');
-      
+
       return res.json(response);
-      
+
     } else {
       return res.status(500).json({
         fulfillmentText: "Dialogflow service unavailable"
       });
     }
-    
+
   } catch (error) {
     console.error('❌ Proxy error:', error);
     res.status(500).json({
@@ -272,91 +272,107 @@ app.post('/dialogflow-proxy', async (req, res) => {
 async function processDialogflowResponse(queryResult, sessionId) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
-  
+
   console.log(`🎯 Processing intent: ${intentName}`);
   console.log(`📋 Parameters:`, parameters);
-  
+
   try {
     switch (intentName) {
       // ===== ATTRACTIONS INTENTS =====
       case 'Ask_All_Attractions':
         return await handleAllAttractions(sessionId);
-      
+
       case 'Ask_Natural_Attractions':
         return await handleNaturalAttractions(sessionId);
-      
+
       case 'Ask_Cultural_Attractions':
         return await handleCulturalAttractions(sessionId);
-      
+
       case 'Ask_Historical_Attractions':
         return await handleHistoricalAttractions(sessionId);
-      
+
       case 'Ask_Artificial_Attractions':
         return await handleArtificialAttractions(sessionId);
-      
+
       case 'Ask_Attractions_By_City':
         const cityName = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAttractionsByCity(sessionId, cityName);
-      
+
       case 'Ask_Attraction_Details':
         const attractionName = parameters['attraction-name'] || parameters.name;
         return await handleAttractionDetails(sessionId, attractionName);
-      
+
       // ===== AMENITIES INTENTS =====
       case 'Ask_All_Amenities':
         return await handleAllAmenities(sessionId);
-      
+
       case 'Ask_Restaurants':
         return await handleRestaurants(sessionId);
-      
+
       case 'Ask_Lodges':
         return await handleLodges(sessionId);
-      
+
       case 'Ask_Hotels':
         return await handleHotels(sessionId);
-      
+
       case 'Ask_Guest_Houses':
         return await handleGuestHouses(sessionId);
-      
+
       case 'Ask_Camping':
         return await handleCamping(sessionId);
-      
+
       case 'Ask_Cafes':
         return await handleCafes(sessionId);
-      
+
       case 'Ask_Amenities_By_City':
         const amenityCityName = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAmenitiesByCity(sessionId, amenityCityName);
-      
+
       case 'Ask_Amenity_Details':
         const amenityName = parameters['amenity-name'] || parameters.name;
         return await handleAmenityDetails(sessionId, amenityName);
-      
+
       // ===== PAGINATION INTENTS (CORRIGÉ) =====
       case 'Pagination_ShowMore':
         return await handleShowMore(sessionId);
-      
+
       case 'Pagination_Decline':
         return handleDecline(sessionId);
-      
+
       // ===== MAP INTENTS =====
       case 'Show_Attraction_On_Map':
       case 'Show_Amenity_On_Map':
       case 'Map_Request_Yes':
         return await handleShowOnMap(sessionId);
-      
+
       case 'Map_Request_No':
         return handleMapDecline(sessionId);
-      
+
       case 'Default Welcome Intent':
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, amenities, restaurants, hotels, and more in our beautiful region."
         };
-        
+      // Dans processDialogflowResponse, ajoutez ces cases après les autres intents:
+      case 'Ask_Nearest_Attractions':
+        return await handleNearestAttractions(sessionId);
+
+      case 'Ask_Nearest_Amenities':
+        return await handleNearestAmenities(sessionId);
+
+      case 'Ask_Nearest_By_City':
+        const nearestCityName = parameters.city || parameters['geo-city'] || parameters.name;
+        return await handleNearestByCity(sessionId, nearestCityName);
+
+      case 'Ask_Nearest_Restaurants':
+        return await handleNearestRestaurants(sessionId);
+
+      case 'Ask_Nearest_Hotels':
+        return await handleNearestHotels(sessionId);
+
       default:
         // 🔧 GESTION AMÉLIORÉE DES INTENTS NON RECONNUS
         console.log(`⚠️ Unhandled intent: ${intentName}`);
-        
+
         // Vérifier si on a des données de session en attente
         const sessionData = getSessionData(sessionId);
         if (sessionData && sessionData.waitingForMoreResponse) {
@@ -367,7 +383,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
           console.log('🗺️ User might want to see on map');
           return await handleShowOnMap(sessionId);
         }
-        
+
         return {
           fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, amenities, restaurants, or hotels.`
         };
@@ -386,9 +402,9 @@ async function processDialogflowResponse(queryResult, sessionId) {
 function handlePaginatedResponse(allItems, category, categoryDisplayName, sessionId, cityName = null, itemType = 'attraction') {
   const ITEMS_PER_PAGE = 10;
   const totalCount = allItems.length;
-  
+
   console.log(`📊 handlePaginatedResponse: ${totalCount} ${itemType}s, category: ${category}`);
-  
+
   if (totalCount <= ITEMS_PER_PAGE) {
     // Pas de pagination nécessaire
     const messagesByCategory = {
@@ -398,7 +414,7 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
       'cultural': `I found ${totalCount} fascinating cultural attractions!`,
       'historical': `I found ${totalCount} remarkable historical attractions!`,
       'artificial': `I found ${totalCount} impressive artificial attractions!`,
-      
+
       // Amenities
       'all_amenities': `I found ${totalCount} great amenities in Draa-Tafilalet!`,
       'restaurants': `I found ${totalCount} wonderful restaurants!`,
@@ -441,9 +457,9 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
     const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
     const remainingItems = allItems.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingItems.length;
-    
+
     console.log(`📄 Pagination: Showing ${firstPageItems.length}, ${remainingCount} remaining`);
-    
+
     // 🔧 SAUVEGARDER CORRECTEMENT LES DONNÉES DE SESSION
     const sessionData = {
       remainingItems: remainingItems,
@@ -455,9 +471,9 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
       totalFound: totalCount,
       timestamp: Date.now()
     };
-    
+
     saveSessionData(sessionId, sessionData);
-    
+
     // Vérifier que les données ont été sauvées
     const verifyData = getSessionData(sessionId);
     console.log(`✅ Session data verified: waitingForMoreResponse = ${verifyData?.waitingForMoreResponse}`);
@@ -469,7 +485,7 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
       'cultural': `I found ${totalCount} cultural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
       'historical': `I found ${totalCount} historical attractions! Here are the first ${ITEMS_PER_PAGE}:`,
       'artificial': `I found ${totalCount} artificial attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      
+
       // Amenities  
       'all_amenities': `I found ${totalCount} amenities! Here are the first ${ITEMS_PER_PAGE}:`,
       'restaurants': `I found ${totalCount} restaurants! Here are the first ${ITEMS_PER_PAGE}:`,
@@ -519,11 +535,11 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
 // ============================
 async function handleShowMore(sessionId) {
   console.log(`🔍 handleShowMore called for session: ${sessionId}`);
-  
+
   debugSession(sessionId, 'HANDLE_SHOW_MORE');
-  
+
   const sessionData = getSessionData(sessionId);
-  
+
   if (!sessionData) {
     console.log(`❌ No session data found for ${sessionId}`);
     return {
@@ -546,15 +562,15 @@ async function handleShowMore(sessionId) {
   }
 
   const { remainingItems, category, categoryDisplayName, cityName, itemType } = sessionData;
-  
+
   console.log(`✅ Showing ${remainingItems.length} more ${itemType}s of category: ${category}`);
-  
+
   // Nettoyer la session
   sessionStorage.delete(sessionId);
 
   const itemLabel = itemType === 'amenity' ? 'amenities' : 'attractions';
-  
-  const naturalResponse = cityName 
+
+  const naturalResponse = cityName
     ? `Perfect! Here are all the remaining ${itemLabel} in ${cityName}:`
     : `Perfect! Here are all the remaining ${categoryDisplayName} ${itemLabel}:`;
 
@@ -585,13 +601,13 @@ async function handleShowMore(sessionId) {
 // ============================
 function handleDecline(sessionId) {
   console.log(`🚫 handleDecline called for session: ${sessionId}`);
-  
+
   const sessionData = getSessionData(sessionId);
-  
+
   if (sessionData && sessionData.waitingForMoreResponse) {
     console.log(`✅ Declining pagination request`);
     sessionStorage.delete(sessionId);
-    
+
     return {
       fulfillmentText: "No problem! I'm here whenever you need help discovering attractions or amenities in Draa-Tafilalet. What else would you like to know? 😊"
     };
@@ -611,7 +627,7 @@ async function handleAllAmenities(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Amenities`);
     const allAmenities = response.data;
-    
+
     if (!allAmenities || allAmenities.length === 0) {
       return { fulfillmentText: "No amenities found at the moment." };
     }
@@ -627,7 +643,7 @@ async function handleRestaurants(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Restaurants`);
     const restaurants = response.data;
-    
+
     if (!restaurants || restaurants.length === 0) {
       return { fulfillmentText: "No restaurants found." };
     }
@@ -643,7 +659,7 @@ async function handleLodges(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Lodges`);
     const lodges = response.data;
-    
+
     if (!lodges || lodges.length === 0) {
       return { fulfillmentText: "No lodges found." };
     }
@@ -659,7 +675,7 @@ async function handleHotels(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Hotels`);
     const hotels = response.data;
-    
+
     if (!hotels || hotels.length === 0) {
       return { fulfillmentText: "No hotels found." };
     }
@@ -675,7 +691,7 @@ async function handleGuestHouses(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/GuestHouses`);
     const guestHouses = response.data;
-    
+
     if (!guestHouses || guestHouses.length === 0) {
       return { fulfillmentText: "No guest houses found." };
     }
@@ -691,7 +707,7 @@ async function handleCamping(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Camping`);
     const camping = response.data;
-    
+
     if (!camping || camping.length === 0) {
       return { fulfillmentText: "No camping sites found." };
     }
@@ -707,7 +723,7 @@ async function handleCafes(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Cafes`);
     const cafes = response.data;
-    
+
     if (!cafes || cafes.length === 0) {
       return { fulfillmentText: "No cafes found." };
     }
@@ -728,7 +744,7 @@ async function handleAmenitiesByCity(sessionId, cityName) {
     }
 
     const cityResult = await tryMultipleCityVariants(cityName);
-    
+
     if (!cityResult.success) {
       return {
         fulfillmentText: `I couldn't find amenities information about "${cityName}". Try another city.`
@@ -736,7 +752,7 @@ async function handleAmenitiesByCity(sessionId, cityName) {
     }
 
     // Filter amenities (items without entryFre and guideToursAvailable)
-    const amenities = cityResult.data.filter(location => 
+    const amenities = cityResult.data.filter(location =>
       !location.hasOwnProperty('entryFre') && !location.hasOwnProperty('guideToursAvailable')
     );
 
@@ -747,7 +763,7 @@ async function handleAmenitiesByCity(sessionId, cityName) {
     }
 
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-    
+
     return handlePaginatedResponse(amenities, `city_amenities_${cityName.toLowerCase()}`, `amenities in ${formattedCityName}`, sessionId, formattedCityName, 'amenity');
   } catch (error) {
     console.error(`❌ Error finding amenities in ${cityName}:`, error);
@@ -766,7 +782,7 @@ async function handleAmenityDetails(sessionId, amenityName) {
     }
 
     console.log(`🔍 Fetching details for amenity: ${amenityName}`);
-    
+
     const response = await makeApiCall(
       `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(amenityName)}`
     );
@@ -779,7 +795,7 @@ async function handleAmenityDetails(sessionId, amenityName) {
 
     const amenityData = response.data[0];
     const amenityType = determineAmenityType(amenityData);
-    
+
     console.log(`✅ Found ${amenityType} amenity: ${amenityData.name}`);
 
     // Sauvegarder les données pour le flux map
@@ -809,13 +825,13 @@ async function handleAmenityDetails(sessionId, amenityName) {
 
   } catch (error) {
     console.error(`❌ Error fetching amenity details for ${amenityName}:`, error);
-    
+
     if (error.response?.status === 404) {
       return {
         fulfillmentText: `I couldn't find an amenity named "${amenityName}". Please check the name or try searching for something similar.`
       };
     }
-    
+
     return {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${amenityName}" right now. Please try again later.`
     };
@@ -840,7 +856,7 @@ function determineAmenityType(amenityData) {
     // Fallback - analyser le nom ou la description
     const name = (amenityData.name || '').toLowerCase();
     const description = (amenityData.description || '').toLowerCase();
-    
+
     if (name.includes('restaurant') || description.includes('restaurant')) {
       return 'restaurant';
     } else if (name.includes('hotel') || description.includes('hotel')) {
@@ -867,7 +883,7 @@ async function handleAllAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No attractions found at the moment." };
     }
@@ -883,7 +899,7 @@ async function handleNaturalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/NaturalAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No natural attractions found." };
     }
@@ -899,7 +915,7 @@ async function handleCulturalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/CulturalAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No cultural attractions found." };
     }
@@ -915,7 +931,7 @@ async function handleHistoricalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/HistoricalAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No historical attractions found." };
     }
@@ -931,7 +947,7 @@ async function handleArtificialAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/ArtificialAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No artificial attractions found." };
     }
@@ -952,14 +968,14 @@ async function handleAttractionsByCity(sessionId, cityName) {
     }
 
     const cityResult = await tryMultipleCityVariants(cityName);
-    
+
     if (!cityResult.success) {
       return {
         fulfillmentText: `I couldn't find information about "${cityName}". Try another city.`
       };
     }
 
-    const attractions = cityResult.data.filter(location => 
+    const attractions = cityResult.data.filter(location =>
       location.hasOwnProperty('entryFre') && location.hasOwnProperty('guideToursAvailable')
     );
 
@@ -970,7 +986,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
     }
 
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-    
+
     return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName, 'attraction');
   } catch (error) {
     console.error(`❌ Error finding attractions in ${cityName}:`, error);
@@ -989,7 +1005,7 @@ async function handleAttractionDetails(sessionId, attractionName) {
     }
 
     console.log(`🔍 Fetching details for attraction: ${attractionName}`);
-    
+
     const response = await makeApiCall(
       `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
     );
@@ -1002,7 +1018,7 @@ async function handleAttractionDetails(sessionId, attractionName) {
 
     const attractionData = response.data[0];
     const attractionType = determineAttractionType(attractionData);
-    
+
     console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
 
     // Sauvegarder les données pour le flux map
@@ -1032,13 +1048,13 @@ async function handleAttractionDetails(sessionId, attractionName) {
 
   } catch (error) {
     console.error(`❌ Error fetching attraction details for ${attractionName}:`, error);
-    
+
     if (error.response?.status === 404) {
       return {
         fulfillmentText: `I couldn't find an attraction named "${attractionName}". Please check the name or try searching for something similar.`
       };
     }
-    
+
     return {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
     };
@@ -1063,15 +1079,15 @@ function determineAttractionType(attractionData) {
     // Fallback - analyser le nom ou la description
     const name = (attractionData.name || '').toLowerCase();
     const description = (attractionData.description || '').toLowerCase();
-    
-    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
-        description.includes('natural') || description.includes('nature')) {
+
+    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') ||
+      description.includes('natural') || description.includes('nature')) {
       return 'natural';
     } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
-               description.includes('cultural') || description.includes('heritage')) {
+      description.includes('cultural') || description.includes('heritage')) {
       return 'cultural';
     } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
-               description.includes('historical') || description.includes('ancient')) {
+      description.includes('historical') || description.includes('ancient')) {
       return 'historical';
     } else {
       return 'artificial';
@@ -1086,7 +1102,7 @@ function determineAttractionType(attractionData) {
 async function handleShowOnMap(sessionId) {
   try {
     const sessionData = getSessionData(sessionId);
-    
+
     if (!sessionData) {
       return {
         fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
@@ -1094,7 +1110,7 @@ async function handleShowOnMap(sessionId) {
     }
 
     let item, lat, lng, name;
-    
+
     // Check if it's attraction or amenity
     if (sessionData.attractionData) {
       item = sessionData.attractionData;
@@ -1111,10 +1127,10 @@ async function handleShowOnMap(sessionId) {
         fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
       };
     }
-    
+
     // Créer le lien Google Maps
     const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
-    
+
     // Nettoyer la session
     sessionStorage.delete(sessionId);
 
@@ -1144,12 +1160,317 @@ function handleMapDecline(sessionId) {
   if (sessionId) {
     sessionStorage.delete(sessionId);
   }
-  
+
   return {
     fulfillmentText: "No problem! Is there anything else you'd like to know about this place or would you like to explore other locations? 😊"
   };
 }
+// ============================
+// NEAREST LOCATIONS - UTILITY FUNCTIONS (À AJOUTER AU BACKEND)
+// ============================
 
+// Fonction pour calculer la distance entre deux points (formule Haversine)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Rayon de la Terre en kilomètres
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  return Math.round(distance * 100) / 100; // Arrondi à 2 décimales
+}
+
+function toRad(Value) {
+  return Value * Math.PI / 180;
+}
+
+// Fonction pour obtenir la géolocalisation de l'utilisateur (simulation)
+function getUserLocation(sessionId) {
+  const sessionData = getSessionData(sessionId);
+
+  // Si l'utilisateur a déjà fourni sa localisation
+  if (sessionData && sessionData.userLocation) {
+    return sessionData.userLocation;
+  }
+
+  // Coordonnées par défaut (centre du Maroc - vous pouvez ajuster)
+  return {
+    latitude: 31.7917,  // Marrakech comme point de référence
+    longitude: -7.0926,
+    city: 'Morocco Center'
+  };
+}
+
+// Fonction pour enrichir les items avec la distance
+function addDistanceToItems(items, userLat, userLon) {
+  return items.map(item => {
+    const distance = calculateDistance(
+      userLat,
+      userLon,
+      parseFloat(item.latitude),
+      parseFloat(item.longitude)
+    );
+
+    return {
+      ...item,
+      distance: distance,
+      distanceText: distance < 1 ?
+        `${Math.round(distance * 1000)}m away` :
+        `${distance}km away`
+    };
+  });
+}
+
+// Fonction pour trier par distance
+function sortByDistance(items) {
+  return items.sort((a, b) => a.distance - b.distance);
+}
+
+// ============================
+// NEAREST LOCATIONS HANDLERS
+// ============================
+
+async function handleNearestAttractions(sessionId) {
+  try {
+    console.log('🗺️ Finding nearest attractions');
+
+    // Obtenir toutes les attractions
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
+    const allAttractions = response.data;
+
+    if (!allAttractions || allAttractions.length === 0) {
+      return { fulfillmentText: "No attractions found at the moment." };
+    }
+
+    // Obtenir la localisation de l'utilisateur
+    const userLocation = getUserLocation(sessionId);
+    console.log(`📍 User location: ${userLocation.latitude}, ${userLocation.longitude}`);
+
+    // Ajouter la distance et trier
+    const attractionsWithDistance = addDistanceToItems(
+      allAttractions,
+      userLocation.latitude,
+      userLocation.longitude
+    );
+
+    const sortedAttractions = sortByDistance(attractionsWithDistance);
+
+    // Prendre les 15 plus proches pour pagination
+    const nearestAttractions = sortedAttractions.slice(0, 15);
+
+    return handlePaginatedResponse(
+      nearestAttractions,
+      'nearest',
+      'nearest attractions',
+      sessionId,
+      null,
+      'attraction'
+    );
+
+  } catch (error) {
+    console.error('❌ Error finding nearest attractions:', error);
+    return { fulfillmentText: "Having trouble finding nearby attractions." };
+  }
+}
+
+async function handleNearestAmenities(sessionId) {
+  try {
+    console.log('🗺️ Finding nearest amenities');
+
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Amenities`);
+    const allAmenities = response.data;
+
+    if (!allAmenities || allAmenities.length === 0) {
+      return { fulfillmentText: "No amenities found at the moment." };
+    }
+
+    const userLocation = getUserLocation(sessionId);
+
+    const amenitiesWithDistance = addDistanceToItems(
+      allAmenities,
+      userLocation.latitude,
+      userLocation.longitude
+    );
+
+    const sortedAmenities = sortByDistance(amenitiesWithDistance);
+    const nearestAmenities = sortedAmenities.slice(0, 15);
+
+    return handlePaginatedResponse(
+      nearestAmenities,
+      'nearest_amenities',
+      'nearest amenities',
+      sessionId,
+      null,
+      'amenity'
+    );
+
+  } catch (error) {
+    console.error('❌ Error finding nearest amenities:', error);
+    return { fulfillmentText: "Having trouble finding nearby amenities." };
+  }
+}
+
+async function handleNearestByCity(sessionId, cityName) {
+  try {
+    if (!cityName) {
+      return {
+        fulfillmentText: "Please tell me which city you'd like to find nearby locations for."
+      };
+    }
+
+    console.log(`🗺️ Finding nearest locations to ${cityName}`);
+
+    // Obtenir les coordonnées de la ville
+    const cityResult = await tryMultipleCityVariants(cityName);
+
+    if (!cityResult.success || !cityResult.data || cityResult.data.length === 0) {
+      return {
+        fulfillmentText: `I couldn't find "${cityName}". Please try another city name.`
+      };
+    }
+
+    // Utiliser les coordonnées de la première localisation trouvée comme centre de la ville
+    const cityCenter = cityResult.data[0];
+    const cityLat = parseFloat(cityCenter.latitude);
+    const cityLon = parseFloat(cityCenter.longitude);
+
+    console.log(`📍 City center coordinates: ${cityLat}, ${cityLon}`);
+
+    // Obtenir toutes les attractions et amenities
+    const [attractionsResponse, amenitiesResponse] = await Promise.all([
+      makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`).catch(() => ({ data: [] })),
+      makeApiCall(`${API_BASE_URL}/api/public/getAll/Amenities`).catch(() => ({ data: [] }))
+    ]);
+
+    const allAttractions = attractionsResponse.data || [];
+    const allAmenities = amenitiesResponse.data || [];
+
+    // Combiner attractions et amenities
+    const allLocations = [
+      ...allAttractions.map(item => ({ ...item, type: 'attraction' })),
+      ...allAmenities.map(item => ({ ...item, type: 'amenity' }))
+    ];
+
+    if (allLocations.length === 0) {
+      return {
+        fulfillmentText: `No locations found near ${cityName}.`
+      };
+    }
+
+    // Ajouter distance et trier
+    const locationsWithDistance = addDistanceToItems(allLocations, cityLat, cityLon);
+    const sortedLocations = sortByDistance(locationsWithDistance);
+
+    // Prendre les 20 plus proches
+    const nearestLocations = sortedLocations.slice(0, 20);
+
+    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+
+    return {
+      fulfillmentText: `Here are the nearest attractions and amenities to ${formattedCityName}:`,
+      payload: {
+        flutter: {
+          type: 'mixed_locations_list',
+          category: 'nearest_by_city',
+          data: {
+            locations: nearestLocations,
+            count: nearestLocations.length,
+            cityName: formattedCityName,
+            cityCoordinates: { latitude: cityLat, longitude: cityLon }
+          },
+          actions: [
+            { type: 'view_details', label: 'View Details', icon: 'info' },
+            { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
+            { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
+          ]
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ Error finding nearest locations to ${cityName}:`, error);
+    return {
+      fulfillmentText: `Having trouble finding locations near ${cityName}.`
+    };
+  }
+}
+
+async function handleNearestRestaurants(sessionId) {
+  try {
+    console.log('🍽️ Finding nearest restaurants');
+
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Restaurants`);
+    const allRestaurants = response.data;
+
+    if (!allRestaurants || allRestaurants.length === 0) {
+      return { fulfillmentText: "No restaurants found at the moment." };
+    }
+
+    const userLocation = getUserLocation(sessionId);
+
+    const restaurantsWithDistance = addDistanceToItems(
+      allRestaurants,
+      userLocation.latitude,
+      userLocation.longitude
+    );
+
+    const sortedRestaurants = sortByDistance(restaurantsWithDistance);
+    const nearestRestaurants = sortedRestaurants.slice(0, 15);
+
+    return handlePaginatedResponse(
+      nearestRestaurants,
+      'nearest_restaurants',
+      'nearest restaurants',
+      sessionId,
+      null,
+      'amenity'
+    );
+
+  } catch (error) {
+    console.error('❌ Error finding nearest restaurants:', error);
+    return { fulfillmentText: "Having trouble finding nearby restaurants." };
+  }
+}
+
+async function handleNearestHotels(sessionId) {
+  try {
+    console.log('🏨 Finding nearest hotels');
+
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Hotels`);
+    const allHotels = response.data;
+
+    if (!allHotels || allHotels.length === 0) {
+      return { fulfillmentText: "No hotels found at the moment." };
+    }
+
+    const userLocation = getUserLocation(sessionId);
+
+    const hotelsWithDistance = addDistanceToItems(
+      allHotels,
+      userLocation.latitude,
+      userLocation.longitude
+    );
+
+    const sortedHotels = sortByDistance(hotelsWithDistance);
+    const nearestHotels = sortedHotels.slice(0, 15);
+
+    return handlePaginatedResponse(
+      nearestHotels,
+      'nearest_hotels',
+      'nearest hotels',
+      sessionId,
+      null,
+      'amenity'
+    );
+
+  } catch (error) {
+    console.error('❌ Error finding nearest hotels:', error);
+    return { fulfillmentText: "Having trouble finding nearby hotels." };
+  }
+}
 // ============================
 // DEBUG ENDPOINTS
 // ============================
@@ -1169,7 +1490,7 @@ app.get('/debug/sessions', (req, res) => {
     sessionId: key,
     data: sessionStorage.get(key)
   }));
-  
+
   res.json({
     totalSessions: sessions.length,
     sessions: sessions
@@ -1179,7 +1500,7 @@ app.get('/debug/sessions', (req, res) => {
 app.delete('/debug/session/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   const existed = sessionStorage.has(sessionId);
-  
+
   if (existed) {
     sessionStorage.delete(sessionId);
     res.json({ success: true, message: `Session ${sessionId} deleted` });
