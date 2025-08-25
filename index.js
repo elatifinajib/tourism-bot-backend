@@ -14,16 +14,16 @@ app.use(express.urlencoded({ extended: true }));
 const API_BASE_URL = 'https://touristeproject.onrender.com';
 const PROJECT_ID = process.env.DIALOGFLOW_PROJECT_ID || 'tourisme-bot-sxin';
 
-// Session storage pour la pagination
-const sessionStorage = new Map();
+// ❌ SUPPRIMÉ : Session storage - plus nécessaire avec Dialogflow contexts
+// const sessionStorage = new Map();
 
-// Google Auth
+// Google Auth (gardé identique)
 let googleAuth = null;
 let cachedToken = null;
 let tokenExpiry = null;
 
 // ============================
-// GOOGLE AUTHENTICATION
+// GOOGLE AUTHENTICATION (Identique)
 // ============================
 
 async function initializeGoogleAuth() {
@@ -82,22 +82,7 @@ async function getGoogleAccessToken() {
 }
 
 // ============================
-// DEBUG FUNCTION
-// ============================
-function debugSession(sessionId, action = '') {
-  const data = sessionStorage.get(sessionId);
-  console.log(`🐛 DEBUG SESSION [${action}] - ${sessionId}:`);
-  console.log(`   - Has data: ${!!data}`);
-  if (data) {
-    console.log(`   - waitingForMoreResponse: ${data.waitingForMoreResponse}`);
-    console.log(`   - itemType: ${data.itemType}`);
-    console.log(`   - category: ${data.category}`);
-    console.log(`   - remainingItems: ${data.remainingItems?.length || 0}`);
-  }
-}
-
-// ============================
-// UTILITY FUNCTIONS
+// UTILITY FUNCTIONS (Identiques)
 // ============================
 
 async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
@@ -160,33 +145,23 @@ async function tryMultipleCityVariants(cityName) {
 }
 
 // ============================
-// SESSION MANAGEMENT (VERSION AMÉLIORÉE)
+// ✅ NOUVEAUX HELPERS DIALOGFLOW CONTEXTS
 // ============================
 
-function saveSessionData(sessionId, data) {
-  const newData = { ...data, timestamp: Date.now() };
-  sessionStorage.set(sessionId, newData);
-  console.log(`💾 Session data saved for ${sessionId}:`, {
-    waitingForMoreResponse: data.waitingForMoreResponse,
-    itemType: data.itemType,
-    category: data.category,
-    remainingItemsCount: data.remainingItems ? data.remainingItems.length : 0
-  });
+function createDialogflowContext(sessionId, contextName, lifespanCount = 2, parameters = {}) {
+  return {
+    name: `projects/${PROJECT_ID}/agent/sessions/${sessionId}/contexts/${contextName}`,
+    lifespanCount: lifespanCount,
+    parameters: parameters
+  };
 }
 
-function getSessionData(sessionId) {
-  const data = sessionStorage.get(sessionId);
+function findContextByName(contexts, contextName) {
+  if (!contexts || !Array.isArray(contexts)) return null;
   
-  if (data) {
-    // Expire after 1 hour
-    if (Date.now() - data.timestamp > 60 * 60 * 1000) {
-      console.log(`🕐 Session ${sessionId} expired`);
-      sessionStorage.delete(sessionId);
-      return null;
-    }
-  }
-  
-  return data;
+  return contexts.find(context => 
+    context.name && context.name.includes(`/contexts/${contextName}`)
+  );
 }
 
 function extractSessionId(sessionPath) {
@@ -206,14 +181,11 @@ app.get('/', (req, res) => {
   });
 });
 
-// Main proxy endpoint for Flutter (VERSION CORRIGÉE)
+// ✅ ENDPOINT PRINCIPAL CORRIGÉ
 app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     console.log(`🔄 Processing: "${message}" (session: ${sessionId})`);
-    
-    // Debug session avant traitement
-    debugSession(sessionId, 'BEFORE_PROCESSING');
     
     if (googleAuth) {
       const token = await getGoogleAccessToken();
@@ -238,17 +210,9 @@ app.post('/dialogflow-proxy', async (req, res) => {
       });
 
       const queryResult = dialogflowResponse.data.queryResult;
-      
-      // 🔧 LOGGING AMÉLIORÉ POUR DEBUG
       console.log(`🎯 Intent: ${queryResult.intent.displayName}`);
-      console.log(`📋 Parameters:`, queryResult.parameters);
-      console.log(`🔗 Input Contexts:`, queryResult.outputContexts?.length || 0);
       
       const response = await processDialogflowResponse(queryResult, sessionId);
-      
-      // Debug session après traitement
-      debugSession(sessionId, 'AFTER_PROCESSING');
-      
       return res.json(response);
       
     } else {
@@ -266,15 +230,15 @@ app.post('/dialogflow-proxy', async (req, res) => {
 });
 
 // ============================
-// DIALOGFLOW RESPONSE PROCESSING
+// ✅ DIALOGFLOW RESPONSE PROCESSING CORRIGÉ
 // ============================
 
 async function processDialogflowResponse(queryResult, sessionId) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
+  const contexts = queryResult.outputContexts || [];
   
   console.log(`🎯 Processing intent: ${intentName}`);
-  console.log(`📋 Parameters:`, parameters);
   
   try {
     switch (intentName) {
@@ -332,21 +296,19 @@ async function processDialogflowResponse(queryResult, sessionId) {
         const amenityName = parameters['amenity-name'] || parameters.name;
         return await handleAmenityDetails(sessionId, amenityName);
       
-      // ===== PAGINATION INTENTS (CORRIGÉ) =====
+      // ===== ✅ NOUVEAUX INTENTS PAGINATION =====
       case 'Pagination_ShowMore':
-        return await handleShowMore(sessionId);
+        return await handleShowMoreWithContext(contexts, sessionId);
       
       case 'Pagination_Decline':
-        return handleDecline(sessionId);
+        return handleDeclineWithContext(contexts, sessionId);
       
-      // ===== MAP INTENTS =====
-      case 'Show_Attraction_On_Map':
-      case 'Show_Amenity_On_Map':
+      // ===== ✅ NOUVEAUX INTENTS MAP =====
       case 'Map_Request_Yes':
-        return await handleShowOnMap(sessionId);
+        return await handleShowOnMapWithContext(contexts, sessionId);
       
       case 'Map_Request_No':
-        return handleMapDecline(sessionId);
+        return handleMapDeclineWithContext(contexts, sessionId);
       
       case 'Default Welcome Intent':
         return {
@@ -354,20 +316,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
         };
         
       default:
-        // 🔧 GESTION AMÉLIORÉE DES INTENTS NON RECONNUS
         console.log(`⚠️ Unhandled intent: ${intentName}`);
-        
-        // Vérifier si on a des données de session en attente
-        const sessionData = getSessionData(sessionId);
-        if (sessionData && sessionData.waitingForMoreResponse) {
-          console.log('🔄 User might want to see more items, redirecting to handleShowMore');
-          return await handleShowMore(sessionId);
-        }
-        if (sessionData && (sessionData.waitingForMapResponse || sessionData.waitingForDetailsText)) {
-          console.log('🗺️ User might want to see on map');
-          return await handleShowOnMap(sessionId);
-        }
-        
         return {
           fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, amenities, restaurants, or hotels.`
         };
@@ -381,8 +330,9 @@ async function processDialogflowResponse(queryResult, sessionId) {
 }
 
 // ============================
-// PAGINATION RESPONSE HANDLER (CORRIGÉ)
+// ✅ PAGINATION AVEC DIALOGFLOW CONTEXTS
 // ============================
+
 function handlePaginatedResponse(allItems, category, categoryDisplayName, sessionId, cityName = null, itemType = 'attraction') {
   const ITEMS_PER_PAGE = 10;
   const totalCount = allItems.length;
@@ -437,40 +387,29 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
       }
     };
   } else {
-    // 🔧 PAGINATION NÉCESSAIRE - LOGIQUE CORRIGÉE
+    // ✅ PAGINATION AVEC DIALOGFLOW CONTEXT
     const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
     const remainingItems = allItems.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingItems.length;
     
     console.log(`📄 Pagination: Showing ${firstPageItems.length}, ${remainingCount} remaining`);
     
-    // 🔧 SAUVEGARDER CORRECTEMENT LES DONNÉES DE SESSION
-    const sessionData = {
-      remainingItems: remainingItems,
+    // ✅ CRÉER DIALOGFLOW CONTEXT au lieu de session backend
+    const waitingForMoreContext = createDialogflowContext(sessionId, 'waiting-for-more', 2, {
+      remainingItems: JSON.stringify(remainingItems),
       category: category,
       categoryDisplayName: categoryDisplayName,
-      cityName: cityName,
-      waitingForMoreResponse: true, // ✅ CRITIQUE
+      cityName: cityName || '',
       itemType: itemType,
-      totalFound: totalCount,
-      timestamp: Date.now()
-    };
-    
-    saveSessionData(sessionId, sessionData);
-    
-    // Vérifier que les données ont été sauvées
-    const verifyData = getSessionData(sessionId);
-    console.log(`✅ Session data verified: waitingForMoreResponse = ${verifyData?.waitingForMoreResponse}`);
+      totalFound: totalCount
+    });
 
     const messagesByCategory = {
-      // Attractions
       'all': `I found ${totalCount} amazing attractions! Here are the first ${ITEMS_PER_PAGE}:`,
       'natural': `I found ${totalCount} natural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
       'cultural': `I found ${totalCount} cultural attractions! Here are the first ${ITEMS_PER_PAGE}:`,
       'historical': `I found ${totalCount} historical attractions! Here are the first ${ITEMS_PER_PAGE}:`,
       'artificial': `I found ${totalCount} artificial attractions! Here are the first ${ITEMS_PER_PAGE}:`,
-      
-      // Amenities  
       'all_amenities': `I found ${totalCount} amenities! Here are the first ${ITEMS_PER_PAGE}:`,
       'restaurants': `I found ${totalCount} restaurants! Here are the first ${ITEMS_PER_PAGE}:`,
       'hotels': `I found ${totalCount} hotels! Here are the first ${ITEMS_PER_PAGE}:`,
@@ -489,6 +428,7 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
 
     return {
       fulfillmentText: displayMessage,
+      outputContexts: [waitingForMoreContext], // ✅ DIALOGFLOW CONTEXT
       payload: {
         flutter: {
           type: itemType === 'amenity' ? 'amenities_list_with_more' : 'attractions_list_with_more',
@@ -514,46 +454,46 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
   }
 }
 
-// ============================
-// HANDLE SHOW MORE (VERSION CORRIGÉE)
-// ============================
-async function handleShowMore(sessionId) {
-  console.log(`🔍 handleShowMore called for session: ${sessionId}`);
+// ✅ HANDLE SHOW MORE AVEC DIALOGFLOW CONTEXT
+async function handleShowMoreWithContext(contexts, sessionId) {
+  console.log(`🔍 handleShowMoreWithContext called for session: ${sessionId}`);
   
-  debugSession(sessionId, 'HANDLE_SHOW_MORE');
+  const waitingForMoreContext = findContextByName(contexts, 'waiting-for-more');
   
-  const sessionData = getSessionData(sessionId);
-  
-  if (!sessionData) {
-    console.log(`❌ No session data found for ${sessionId}`);
+  if (!waitingForMoreContext || !waitingForMoreContext.parameters) {
+    console.log(`❌ No waiting-for-more context found`);
     return {
       fulfillmentText: "I don't have any additional items to show right now. Please ask me about attractions or amenities first."
     };
   }
 
-  if (!sessionData.waitingForMoreResponse) {
-    console.log(`❌ Not waiting for more response. Current state: ${JSON.stringify(sessionData)}`);
-    return {
-      fulfillmentText: "I'm not currently showing you a list that has more items. Please ask me about attractions or amenities first."
-    };
-  }
+  const parameters = waitingForMoreContext.parameters;
+  const remainingItemsStr = parameters.remainingItems;
+  const category = parameters.category || 'all';
+  const categoryDisplayName = parameters.categoryDisplayName || 'items';
+  const cityName = parameters.cityName || null;
+  const itemType = parameters.itemType || 'attraction';
 
-  if (!sessionData.remainingItems || sessionData.remainingItems.length === 0) {
-    console.log(`❌ No remaining items found`);
+  if (!remainingItemsStr) {
+    console.log(`❌ No remaining items in context`);
     return {
       fulfillmentText: "I don't have any additional items to show."
     };
   }
 
-  const { remainingItems, category, categoryDisplayName, cityName, itemType } = sessionData;
-  
+  let remainingItems;
+  try {
+    remainingItems = JSON.parse(remainingItemsStr);
+  } catch (error) {
+    console.error('❌ Error parsing remaining items:', error);
+    return {
+      fulfillmentText: "Sorry, there was an error retrieving additional items."
+    };
+  }
+
   console.log(`✅ Showing ${remainingItems.length} more ${itemType}s of category: ${category}`);
   
-  // Nettoyer la session
-  sessionStorage.delete(sessionId);
-
   const itemLabel = itemType === 'amenity' ? 'amenities' : 'attractions';
-  
   const naturalResponse = cityName 
     ? `Perfect! Here are all the remaining ${itemLabel} in ${cityName}:`
     : `Perfect! Here are all the remaining ${categoryDisplayName} ${itemLabel}:`;
@@ -580,18 +520,14 @@ async function handleShowMore(sessionId) {
   };
 }
 
-// ============================
-// HANDLE DECLINE (VERSION CORRIGÉE)
-// ============================
-function handleDecline(sessionId) {
-  console.log(`🚫 handleDecline called for session: ${sessionId}`);
+// ✅ HANDLE DECLINE AVEC DIALOGFLOW CONTEXT
+function handleDeclineWithContext(contexts, sessionId) {
+  console.log(`🚫 handleDeclineWithContext called for session: ${sessionId}`);
   
-  const sessionData = getSessionData(sessionId);
+  const waitingForMoreContext = findContextByName(contexts, 'waiting-for-more');
   
-  if (sessionData && sessionData.waitingForMoreResponse) {
+  if (waitingForMoreContext) {
     console.log(`✅ Declining pagination request`);
-    sessionStorage.delete(sessionId);
-    
     return {
       fulfillmentText: "No problem! I'm here whenever you need help discovering attractions or amenities in Draa-Tafilalet. What else would you like to know? 😊"
     };
@@ -604,7 +540,102 @@ function handleDecline(sessionId) {
 }
 
 // ============================
-// 🆕 AMENITIES HANDLERS
+// ✅ MAP HANDLING AVEC DIALOGFLOW CONTEXTS
+// ============================
+
+// ✅ HANDLE SHOW ON MAP AVEC DIALOGFLOW CONTEXT
+async function handleShowOnMapWithContext(contexts, sessionId) {
+  try {
+    console.log(`🗺️ handleShowOnMapWithContext called for session: ${sessionId}`);
+    
+    const waitingForMapContext = findContextByName(contexts, 'waiting-for-map');
+    
+    if (!waitingForMapContext || !waitingForMapContext.parameters) {
+      console.log(`❌ No waiting-for-map context found`);
+      return {
+        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
+      };
+    }
+
+    const parameters = waitingForMapContext.parameters;
+    const itemDataStr = parameters.itemData;
+    const itemName = parameters.itemName || 'this location';
+
+    if (!itemDataStr) {
+      console.log(`❌ No item data in context`);
+      return {
+        fulfillmentText: "I don't have location information available."
+      };
+    }
+
+    let itemData;
+    try {
+      itemData = JSON.parse(itemDataStr);
+    } catch (error) {
+      console.error('❌ Error parsing item data:', error);
+      return {
+        fulfillmentText: "Sorry, there was an error retrieving location information."
+      };
+    }
+
+    const lat = itemData.latitude;
+    const lng = itemData.longitude;
+    const name = itemData.name || itemName;
+    
+    if (!lat || !lng) {
+      console.log(`❌ Invalid coordinates: lat=${lat}, lng=${lng}`);
+      return {
+        fulfillmentText: "Location coordinates are not available for this item."
+      };
+    }
+    
+    // Créer le lien Google Maps
+    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
+    
+    console.log(`✅ Showing ${name} on map at ${lat}, ${lng}`);
+
+    return {
+      fulfillmentText: `Here you can find ${name} on the map: `,
+      payload: {
+        flutter: {
+          type: 'map_location',
+          data: {
+            item: itemData,
+            coordinates: { latitude: lat, longitude: lng },
+            googleMapsUrl: googleMapsUrl
+          }
+        }
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error showing on map:', error);
+    return {
+      fulfillmentText: "Sorry, I couldn't retrieve the location information right now."
+    };
+  }
+}
+
+// ✅ HANDLE MAP DECLINE AVEC DIALOGFLOW CONTEXT
+function handleMapDeclineWithContext(contexts, sessionId) {
+  console.log(`🚫 handleMapDeclineWithContext called for session: ${sessionId}`);
+  
+  const waitingForMapContext = findContextByName(contexts, 'waiting-for-map');
+  
+  if (waitingForMapContext) {
+    console.log(`✅ Declining map request`);
+    return {
+      fulfillmentText: "No problem! Is there anything else you'd like to know about this place or would you like to explore other locations? 😊"
+    };
+  } else {
+    console.log(`ℹ️ General decline response`);
+    return {
+      fulfillmentText: "Okay, no problem! Is there anything else I can help you with? 😊"
+    };
+  }
+}
+
+// ============================
+// 🆕 AMENITIES HANDLERS (Identiques mais avec pagination corrigée)
 // ============================
 
 async function handleAllAmenities(sessionId) {
@@ -757,6 +788,7 @@ async function handleAmenitiesByCity(sessionId, cityName) {
   }
 }
 
+// ✅ AMENITY DETAILS AVEC DIALOGFLOW CONTEXT
 async function handleAmenityDetails(sessionId, amenityName) {
   try {
     if (!amenityName) {
@@ -782,18 +814,18 @@ async function handleAmenityDetails(sessionId, amenityName) {
     
     console.log(`✅ Found ${amenityType} amenity: ${amenityData.name}`);
 
-    // Sauvegarder les données pour le flux map
-    saveSessionData(sessionId, {
-      amenityData: amenityData,
+    // ✅ CRÉER DIALOGFLOW CONTEXT pour la carte au lieu de session backend
+    const waitingForMapContext = createDialogflowContext(sessionId, 'waiting-for-map', 2, {
+      itemData: JSON.stringify(amenityData),
+      itemType: 'amenity',
       amenityType: amenityType,
-      waitingForDetailsText: true,
-      waitingForMapResponse: true,
-      amenityName: amenityData.name
+      itemName: amenityData.name
     });
 
     // Premier message: juste les images
     return {
       fulfillmentText: "",
+      outputContexts: [waitingForMapContext], // ✅ DIALOGFLOW CONTEXT
       payload: {
         flutter: {
           type: 'amenity_details',
@@ -860,7 +892,7 @@ function determineAmenityType(amenityData) {
 }
 
 // ============================
-// ATTRACTION HANDLERS
+// ATTRACTION HANDLERS (Identiques mais avec pagination corrigée)
 // ============================
 
 async function handleAllAttractions(sessionId) {
@@ -980,6 +1012,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
   }
 }
 
+// ✅ ATTRACTION DETAILS AVEC DIALOGFLOW CONTEXT
 async function handleAttractionDetails(sessionId, attractionName) {
   try {
     if (!attractionName) {
@@ -1005,18 +1038,18 @@ async function handleAttractionDetails(sessionId, attractionName) {
     
     console.log(`✅ Found ${attractionType} attraction: ${attractionData.name}`);
 
-    // Sauvegarder les données pour le flux map
-    saveSessionData(sessionId, {
-      attractionData: attractionData,
+    // ✅ CRÉER DIALOGFLOW CONTEXT pour la carte au lieu de session backend
+    const waitingForMapContext = createDialogflowContext(sessionId, 'waiting-for-map', 2, {
+      itemData: JSON.stringify(attractionData),
+      itemType: 'attraction',
       attractionType: attractionType,
-      waitingForDetailsText: true,
-      waitingForMapResponse: true,
-      attractionName: attractionData.name
+      itemName: attractionData.name
     });
 
     // Premier message: juste les images
     return {
       fulfillmentText: "",
+      outputContexts: [waitingForMapContext], // ✅ DIALOGFLOW CONTEXT
       payload: {
         flutter: {
           type: 'attraction_details',
@@ -1080,116 +1113,11 @@ function determineAttractionType(attractionData) {
 }
 
 // ============================
-// MAP HANDLERS
+// ❌ DEBUG ENDPOINTS - SUPPRIMÉS (plus nécessaires avec Dialogflow contexts)
 // ============================
 
-async function handleShowOnMap(sessionId) {
-  try {
-    const sessionData = getSessionData(sessionId);
-    
-    if (!sessionData) {
-      return {
-        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
-      };
-    }
-
-    let item, lat, lng, name;
-    
-    // Check if it's attraction or amenity
-    if (sessionData.attractionData) {
-      item = sessionData.attractionData;
-      lat = item.latitude;
-      lng = item.longitude;
-      name = item.name;
-    } else if (sessionData.amenityData) {
-      item = sessionData.amenityData;
-      lat = item.latitude;
-      lng = item.longitude;
-      name = item.name;
-    } else {
-      return {
-        fulfillmentText: "I don't have location information available. Please ask about a specific attraction or amenity first."
-      };
-    }
-    
-    // Créer le lien Google Maps
-    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
-    
-    // Nettoyer la session
-    sessionStorage.delete(sessionId);
-
-    return {
-      fulfillmentText: `Here you can find ${name} on the map: `,
-      payload: {
-        flutter: {
-          type: 'map_location',
-          data: {
-            item: item,
-            coordinates: { latitude: lat, longitude: lng },
-            googleMapsUrl: googleMapsUrl
-          }
-        }
-      }
-    };
-  } catch (error) {
-    console.error('❌ Error showing on map:', error);
-    return {
-      fulfillmentText: "Sorry, I couldn't retrieve the location information right now."
-    };
-  }
-}
-
-function handleMapDecline(sessionId) {
-  // Nettoyer les données de session
-  if (sessionId) {
-    sessionStorage.delete(sessionId);
-  }
-  
-  return {
-    fulfillmentText: "No problem! Is there anything else you'd like to know about this place or would you like to explore other locations? 😊"
-  };
-}
-
 // ============================
-// DEBUG ENDPOINTS
-// ============================
-
-app.get('/debug/session/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  const data = getSessionData(sessionId);
-  res.json({
-    sessionId,
-    hasData: !!data,
-    data: data
-  });
-});
-
-app.get('/debug/sessions', (req, res) => {
-  const sessions = Array.from(sessionStorage.keys()).map(key => ({
-    sessionId: key,
-    data: sessionStorage.get(key)
-  }));
-  
-  res.json({
-    totalSessions: sessions.length,
-    sessions: sessions
-  });
-});
-
-app.delete('/debug/session/:sessionId', (req, res) => {
-  const { sessionId } = req.params;
-  const existed = sessionStorage.has(sessionId);
-  
-  if (existed) {
-    sessionStorage.delete(sessionId);
-    res.json({ success: true, message: `Session ${sessionId} deleted` });
-  } else {
-    res.json({ success: false, message: `Session ${sessionId} not found` });
-  }
-});
-
-// ============================
-// ERROR HANDLING
+// ERROR HANDLING (Identique)
 // ============================
 
 app.use((error, req, res, next) => {
@@ -1200,7 +1128,7 @@ app.use((error, req, res, next) => {
 });
 
 // ============================
-// SERVER STARTUP
+// SERVER STARTUP (Identique)
 // ============================
 
 initializeGoogleAuth().then(() => {
@@ -1208,7 +1136,7 @@ initializeGoogleAuth().then(() => {
     console.log(`🚀 Tourism Bot Backend started on port ${PORT}`);
     console.log(`🔑 Google Auth initialized: ${!!googleAuth}`);
     console.log(`📋 Project ID: ${PROJECT_ID}`);
-    console.log('✅ Ready to handle Dialogflow requests!');
+    console.log('✅ Ready to handle Dialogflow requests with Contexts!');
   });
 }).catch(error => {
   console.error('❌ Failed to initialize:', error);
