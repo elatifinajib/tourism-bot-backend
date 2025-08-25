@@ -339,7 +339,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
   
   try {
     switch (intentName) {
-      // ATTRACTIONS INTENTS (existing)
+      // ATTRACTIONS INTENTS (existants - inchangés)
       case 'Ask_All_Attractions':
         return await handleAllAttractions(sessionId);
       
@@ -359,7 +359,11 @@ async function processDialogflowResponse(queryResult, sessionId) {
         const cityNameAttr = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAttractionsByCity(sessionId, cityNameAttr);
       
-      // 🆕 NOUVEAUX INTENTS AMENITIES
+      case 'Ask_Attraction_Details':
+        const attractionName = parameters['attraction-name'] || parameters.name;
+        return await handleAttractionDetails(sessionId, attractionName);
+      
+      // 🆕 AMENITIES INTENTS (vos noms exacts)
       case 'Ask_All_Amenities':
         return await handleAllAmenities(sessionId);
       
@@ -385,33 +389,32 @@ async function processDialogflowResponse(queryResult, sessionId) {
         const cityNameAmen = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAmenitiesByCity(sessionId, cityNameAmen);
       
-      // SHARED INTENTS (work for both attractions and amenities)
+      case 'Ask_Amenity_Details':
+        const amenityName = parameters['amenity-name'] || parameters.name;
+        return await handleAmenityDetails(sessionId, amenityName);
+      
+      // SHARED INTENTS (inchangés)
       case 'Pagination_ShowMore':
         return await handleShowMore(sessionId);
       
       case 'Pagination_Decline':
         return handleDecline(sessionId);
       
-      case 'Ask_Details': // Generic details intent for both attractions and amenities
-        const itemName = parameters['item-name'] || parameters['attraction-name'] || parameters['amenity-name'] || parameters.name;
-        return await handleItemDetails(sessionId, itemName);
-      
-      // MAP INTENTS (work for both)
-      case 'Show_Item_On_Map':
+      case 'Show_Attraction_On_Map':
       case 'Map_Request_Yes':
-        return await handleShowItemOnMap(sessionId);
+        return await handleShowItemOnMap(sessionId); // Fonction unifiée attractions + amenities
       
       case 'Map_Request_No':
         return handleMapDecline(sessionId);
       
       case 'Default Welcome Intent':
         return {
-          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, amenities, restaurants, hotels, and more."
+          fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, restaurants, hotels, lodges, guest houses, camping sites, cafes and more."
         };
         
       default:
         return {
-          fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, restaurants, hotels, or other amenities.`
+          fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, restaurants, hotels, or other services.`
         };
     }
   } catch (error) {
@@ -422,6 +425,79 @@ async function processDialogflowResponse(queryResult, sessionId) {
   }
 }
 
+// 🆕 NOUVELLE FONCTION: handleAmenityDetails (séparée d'handleAttractionDetails)
+async function handleAmenityDetails(sessionId, amenityName) {
+  try {
+    if (!amenityName) {
+      return {
+        fulfillmentText: "Please tell me which amenity you'd like to know more about."
+      };
+    }
+
+    console.log(`🔍 Fetching details for amenity: ${amenityName}`);
+    
+    const response = await makeApiCall(
+      `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(amenityName)}`
+    );
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: `I couldn't find detailed information about "${amenityName}". Please check the spelling or try another amenity name.`
+      };
+    }
+
+    const amenityData = response.data[0];
+    
+    // Vérifier que c'est bien une amenity (pas une attraction)
+    if (!isAmenity(amenityData)) {
+      return {
+        fulfillmentText: `"${amenityName}" appears to be an attraction, not an amenity. Try asking "Tell me about ${amenityName}" for attraction details.`
+      };
+    }
+    
+    const amenityType = determineAmenityType(amenityData);
+    
+    console.log(`✅ Found amenity (${amenityType}): ${amenityData.name}`);
+
+    // Sauvegarder les données pour le flux map
+    saveSessionData(sessionId, {
+      amenityData: amenityData,
+      amenityType: amenityType,
+      waitingForDetailsText: true,
+      waitingForMapResponse: true,
+      amenityName: amenityData.name
+    });
+
+    // Premier message: juste les images
+    return {
+      fulfillmentText: "",
+      payload: {
+        flutter: {
+          type: 'amenity_details',
+          category: amenityType,
+          data: {
+            amenity: amenityData,
+            amenityType: amenityType,
+            onlyImages: true
+          }
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ Error fetching amenity details for ${amenityName}:`, error);
+    
+    if (error.response?.status === 404) {
+      return {
+        fulfillmentText: `I couldn't find an amenity named "${amenityName}". Please check the name or try searching for something similar.`
+      };
+    }
+    
+    return {
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about "${amenityName}" right now. Please try again later.`
+    };
+  }
+}
 // ============================
 // 🆕 AMENITIES HANDLERS
 // ============================
@@ -930,16 +1006,25 @@ async function handleShowItemOnMap(sessionId) {
   try {
     const sessionData = getSessionData(sessionId);
     
-    if (!sessionData || !sessionData.itemData) {
+    if (!sessionData) {
       return {
         fulfillmentText: "I don't have location information available. Please ask about a specific place first."
       };
     }
 
-    const item = sessionData.itemData;
-    const lat = item.latitude;
-    const lng = item.longitude;
-    const name = item.name;
+    // Supporter les deux types de données
+    const itemData = sessionData.attractionData || sessionData.amenityData;
+    const itemType = sessionData.attractionData ? 'attraction' : 'amenity';
+    
+    if (!itemData) {
+      return {
+        fulfillmentText: "I don't have location information available. Please ask about a specific place first."
+      };
+    }
+
+    const lat = itemData.latitude;
+    const lng = itemData.longitude;
+    const name = itemData.name;
     
     // Créer le lien Google Maps
     const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
@@ -953,7 +1038,7 @@ async function handleShowItemOnMap(sessionId) {
         flutter: {
           type: 'map_location',
           data: {
-            item: item,
+            [itemType]: itemData, // 'attraction' ou 'amenity'
             coordinates: { latitude: lat, longitude: lng },
             googleMapsUrl: googleMapsUrl
           }
