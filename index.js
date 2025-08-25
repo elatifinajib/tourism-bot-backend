@@ -1063,6 +1063,78 @@ function handleMapDecline(sessionId) {
   };
 }
 
+async function handleAttractionDetails(sessionId, attractionName) {
+  try {
+    if (!attractionName) {
+      return {
+        fulfillmentText: "Please tell me which attraction you'd like to know more about."
+      };
+    }
+
+    console.log(`🔍 Fetching details for attraction: ${attractionName}`);
+    
+    const response = await makeApiCall(
+      `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
+    );
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: `I couldn't find detailed information about "${attractionName}". Please check the spelling or try another attraction name.`
+      };
+    }
+
+    const attractionData = response.data[0];
+    
+    // Vérifier que c'est bien une attraction (pas une amenity)
+    if (!isAttraction(attractionData)) {
+      return {
+        fulfillmentText: `"${attractionName}" appears to be an amenity, not an attraction. Try asking "Tell me about ${attractionName}" for amenity details.`
+      };
+    }
+    
+    const attractionType = determineAttractionType(attractionData);
+    
+    console.log(`✅ Found attraction (${attractionType}): ${attractionData.name}`);
+
+    // Sauvegarder les données pour le flux map
+    saveSessionData(sessionId, {
+      attractionData: attractionData,
+      attractionType: attractionType,
+      waitingForDetailsText: true,
+      waitingForMapResponse: true,
+      attractionName: attractionData.name
+    });
+
+    // Premier message: juste les images
+    return {
+      fulfillmentText: "",
+      payload: {
+        flutter: {
+          type: 'attraction_details',
+          category: attractionType,
+          data: {
+            attraction: attractionData,
+            attractionType: attractionType,
+            onlyImages: true
+          }
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`❌ Error fetching attraction details for ${attractionName}:`, error);
+    
+    if (error.response?.status === 404) {
+      return {
+        fulfillmentText: `I couldn't find an attraction named "${attractionName}". Please check the name or try searching for something similar.`
+      };
+    }
+    
+    return {
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
+    };
+  }
+}
 // ============================
 // TEXT GENERATION FOR DETAILS (modified to support amenities)
 // ============================
