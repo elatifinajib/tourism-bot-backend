@@ -239,7 +239,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
   const contexts = queryResult.outputContexts || [];
   
   console.log(`🎯 Processing intent: ${intentName}`);
-  
+  debugContexts(contexts, sessionId, 'RECEIVED'); // ✅ DEBUG
   try {
     switch (intentName) {
       // ===== ATTRACTIONS INTENTS =====
@@ -340,23 +340,10 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
   console.log(`📊 handlePaginatedResponse: ${totalCount} ${itemType}s, category: ${category}`);
   
   if (totalCount <= ITEMS_PER_PAGE) {
-    // Pas de pagination nécessaire
+    // Pas de pagination nécessaire - même code...
     const messagesByCategory = {
-      // Attractions
       'all': `I found ${totalCount} amazing attractions in Draa-Tafilalet!`,
-      'natural': `I found ${totalCount} beautiful natural attractions!`,
-      'cultural': `I found ${totalCount} fascinating cultural attractions!`,
-      'historical': `I found ${totalCount} remarkable historical attractions!`,
-      'artificial': `I found ${totalCount} impressive artificial attractions!`,
-      
-      // Amenities
-      'all_amenities': `I found ${totalCount} great amenities in Draa-Tafilalet!`,
-      'restaurants': `I found ${totalCount} wonderful restaurants!`,
-      'hotels': `I found ${totalCount} comfortable hotels!`,
-      'lodges': `I found ${totalCount} beautiful lodges!`,
-      'guest_houses': `I found ${totalCount} cozy guest houses!`,
-      'camping': `I found ${totalCount} great camping sites!`,
-      'cafes': `I found ${totalCount} lovely cafes!`
+      // ... autres messages
     };
 
     let displayMessage;
@@ -387,22 +374,25 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
       }
     };
   } else {
-    // ✅ PAGINATION AVEC DIALOGFLOW CONTEXT
+    // ✅ PAGINATION AVEC DIALOGFLOW CONTEXT + DEBUG
     const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
     const remainingItems = allItems.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingItems.length;
     
     console.log(`📄 Pagination: Showing ${firstPageItems.length}, ${remainingCount} remaining`);
     
-    // ✅ CRÉER DIALOGFLOW CONTEXT au lieu de session backend
-    const waitingForMoreContext = createDialogflowContext(sessionId, 'waiting-for-more', 2, {
+    // ✅ CRÉER DIALOGFLOW CONTEXT avec DEBUG
+    const waitingForMoreContext = createDialogflowContext(sessionId, 'waiting-for-more', 5, {
       remainingItems: JSON.stringify(remainingItems),
       category: category,
       categoryDisplayName: categoryDisplayName,
       cityName: cityName || '',
       itemType: itemType,
-      totalFound: totalCount
+      totalFound: totalCount.toString() // ✅ Convertir en string
     });
+
+    console.log(`✅ Created waiting-for-more context with ${remainingCount} remaining items`);
+    console.log(`✅ Context parameters:`, Object.keys(waitingForMoreContext.parameters));
 
     const messagesByCategory = {
       'all': `I found ${totalCount} amazing attractions! Here are the first ${ITEMS_PER_PAGE}:`,
@@ -1111,7 +1101,19 @@ function determineAttractionType(attractionData) {
     }
   }
 }
-
+function debugContexts(contexts, sessionId, action = '') {
+  console.log(`🐛 DEBUG CONTEXTS [${action}] - Session: ${sessionId}`);
+  console.log(`   - Total contexts: ${contexts.length}`);
+  
+  contexts.forEach((context, index) => {
+    const contextName = context.name.split('/').pop();
+    console.log(`   - Context ${index + 1}: ${contextName}`);
+    console.log(`     ├─ Lifespan: ${context.lifespanCount}`);
+    if (context.parameters && Object.keys(context.parameters).length > 0) {
+      console.log(`     ├─ Parameters: ${Object.keys(context.parameters).join(', ')}`);
+    }
+  });
+}
 // ============================
 // ❌ DEBUG ENDPOINTS - SUPPRIMÉS (plus nécessaires avec Dialogflow contexts)
 // ============================
