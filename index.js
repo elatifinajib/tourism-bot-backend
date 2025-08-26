@@ -923,10 +923,11 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
         'sportive': `${prefix} dynamic sportive activities!`,
         'traditional': `${prefix} authentic traditional activities!`,
         'cultural': `${prefix} enriching cultural activities!`
-      }
+  }
     };
     
     return contentMessages[contentType]?.[category] || `${prefix} ${categoryDisplayName}!`;
+    
   };
   
   if (totalCount <= ITEMS_PER_PAGE) {
