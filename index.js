@@ -392,7 +392,32 @@ async function processDialogflowResponse(queryResult, sessionId) {
       case 'Ask_Amenity_Details':
         const amenityName = parameters['amenity-name'] || parameters.name;
         return await handleAmenityDetails(sessionId, amenityName);
+      case 'Ask_All_Activities':
+        return await handleAllActivities(sessionId);
       
+      case 'Ask_Adventure_Activities':
+        return await handleAdventureActivities(sessionId);
+      
+      case 'Ask_Sportive_Activities':
+        return await handleSportiveActivities(sessionId);
+      
+      case 'Ask_Traditional_Activities':
+        return await handleTraditionalActivities(sessionId);
+      
+      case 'Ask_Cultural_Activities':
+        return await handleCulturalActivities(sessionId);
+      
+      case 'Ask_Activities_By_Location':
+        const locationName = parameters.location || parameters['location-name'] || parameters.name;
+        return await handleActivitiesByLocation(sessionId, locationName);
+      
+      case 'Ask_Activities_By_City':
+        const cityNameAct = parameters.city || parameters['geo-city'] || parameters.name;
+        return await handleActivitiesByCity(sessionId, cityNameAct);
+      
+      case 'Ask_Activity_Details':
+        const activityName = parameters['activity-name'] || parameters.name;
+        return await handleActivityDetails(sessionId, activityName);
       // SHARED INTENTS (inchangés)
       case 'Pagination_ShowMore':
         return await handleShowMore(sessionId);
@@ -884,6 +909,13 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
         'guesthouses': `${prefix} welcoming guest houses!`,
         'camping': `${prefix} camping sites!`,
         'cafes': `${prefix} lovely cafes!`
+      },
+      'activities': {
+        'all_activities': `${prefix} exciting activities in Draa-Tafilalet!`,
+        'adventure': `${prefix} thrilling adventure activities!`,
+        'sportive': `${prefix} dynamic sportive activities!`,
+        'traditional': `${prefix} authentic traditional activities!`,
+        'cultural': `${prefix} enriching cultural activities!`
       }
     };
     
@@ -1132,6 +1164,240 @@ async function handleAttractionDetails(sessionId, attractionName) {
     
     return {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
+    };
+  }
+}
+
+// Fonction pour détecter si c'est une activité
+function isActivity(item) {
+  return item.hasOwnProperty('id_Activity') && item.hasOwnProperty('duration') && item.hasOwnProperty('ageLimit');
+}
+
+// Fonction pour déterminer le type d'activité
+function determineActivityType(activityData) {
+  if (activityData.hasOwnProperty('typeSport')) {
+    return 'sportive';
+  } else if (activityData.hasOwnProperty('terrainType')) {
+    return 'adventure';
+  } else if (activityData.hasOwnProperty('craftType')) {
+    return 'traditional';
+  } else if (activityData.hasOwnProperty('traditionAssociated')) {
+    return 'cultural';
+  } else {
+    return 'activity';
+  }
+}
+
+async function handleAllActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Activities`);
+    const allActivities = response.data;
+    
+    if (!allActivities || allActivities.length === 0) {
+      return { fulfillmentText: "No activities found at the moment." };
+    }
+
+    return handlePaginatedResponse(allActivities, 'all_activities', 'activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('Error fetching all activities:', error);
+    return { fulfillmentText: "Having trouble accessing activities database." };
+  }
+}
+
+async function handleAdventureActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Adventure`);
+    const activities = response.data;
+    
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No adventure activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'adventure', 'adventure activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('Error fetching adventure activities:', error);
+    return { fulfillmentText: "Having trouble finding adventure activities." };
+  }
+}
+
+async function handleSportiveActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Sportive`);
+    const activities = response.data;
+    
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No sportive activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'sportive', 'sportive activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('Error fetching sportive activities:', error);
+    return { fulfillmentText: "Having trouble finding sportive activities." };
+  }
+}
+
+async function handleTraditionalActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Traditional`);
+    const activities = response.data;
+    
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No traditional activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'traditional', 'traditional activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('Error fetching traditional activities:', error);
+    return { fulfillmentText: "Having trouble finding traditional activities." };
+  }
+}
+
+async function handleCulturalActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Cultural`);
+    const activities = response.data;
+    
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No cultural activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'cultural', 'cultural activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('Error fetching cultural activities:', error);
+    return { fulfillmentText: "Having trouble finding cultural activities." };
+  }
+}
+
+async function handleActivitiesByLocation(sessionId, locationName) {
+  try {
+    if (!locationName) {
+      return {
+        fulfillmentText: "Please tell me which location you're interested in for activities."
+      };
+    }
+
+    const response = await makeApiCall(
+      `${API_BASE_URL}/api/public/getActivityByLocation/${encodeURIComponent(locationName)}`
+    );
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: `No activities found in ${locationName}.`
+      };
+    }
+
+    const formattedLocationName = locationName.charAt(0).toUpperCase() + locationName.slice(1).toLowerCase();
+    
+    return handlePaginatedResponse(response.data, `location_activities_${locationName.toLowerCase()}`, `activities in ${formattedLocationName}`, sessionId, formattedLocationName, 'activities');
+  } catch (error) {
+    console.error(`Error finding activities in ${locationName}:`, error);
+    return {
+      fulfillmentText: `Having trouble finding activities in ${locationName}.`
+    };
+  }
+}
+
+async function handleActivitiesByCity(sessionId, cityName) {
+  try {
+    if (!cityName) {
+      return {
+        fulfillmentText: "Please tell me which city you're interested in for activities."
+      };
+    }
+
+    console.log(`Filtering activities by city: ${cityName}`);
+    
+    // Récupérer toutes les activités
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Activities`);
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: "No activities found at the moment."
+      };
+    }
+
+    // Filtrer par ville
+    const filteredActivities = response.data.filter(activity => 
+      activity.cityOfTheActivity && 
+      activity.cityOfTheActivity.toLowerCase() === cityName.toLowerCase()
+    );
+
+    if (!filteredActivities || filteredActivities.length === 0) {
+      return {
+        fulfillmentText: `No activities found in ${cityName}.`
+      };
+    }
+
+    const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
+    
+    return handlePaginatedResponse(filteredActivities, `city_activities_${cityName.toLowerCase()}`, `activities in ${formattedCityName}`, sessionId, formattedCityName, 'activities');
+  } catch (error) {
+    console.error(`Error finding activities in ${cityName}:`, error);
+    return {
+      fulfillmentText: `Having trouble finding activities in ${cityName}.`
+    };
+  }
+}
+
+async function handleActivityDetails(sessionId, activityName) {
+  try {
+    if (!activityName) {
+      return {
+        fulfillmentText: "Please tell me which activity you'd like to know more about."
+      };
+    }
+
+    console.log(`Fetching details for activity: ${activityName}`);
+    
+    const response = await makeApiCall(
+      `${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(activityName)}`
+    );
+
+    if (!response.data || response.data.length === 0) {
+      return {
+        fulfillmentText: `I couldn't find detailed information about "${activityName}". Please check the spelling or try another activity name.`
+      };
+    }
+
+    const activityData = response.data[0];
+    
+    if (!isActivity(activityData)) {
+      return {
+        fulfillmentText: `"${activityName}" doesn't appear to be an activity.`
+      };
+    }
+    
+    const activityType = determineActivityType(activityData);
+    
+    console.log(`Found activity (${activityType}): ${activityData.name}`);
+
+    // Premier message: juste les images
+    return {
+      fulfillmentText: "",
+      payload: {
+        flutter: {
+          type: 'activity_details',
+          category: activityType,
+          data: {
+            activity: activityData,
+            activityType: activityType,
+            onlyImages: true
+          }
+        }
+      }
+    };
+
+  } catch (error) {
+    console.error(`Error fetching activity details for ${activityName}:`, error);
+    
+    if (error.response?.status === 404) {
+      return {
+        fulfillmentText: `I couldn't find an activity named "${activityName}". Please check the name or try searching for something similar.`
+      };
+    }
+    
+    return {
+      fulfillmentText: `Sorry, I'm having trouble retrieving details about "${activityName}" right now. Please try again later.`
     };
   }
 }
