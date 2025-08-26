@@ -882,6 +882,13 @@ async function handleItemDetails(sessionId, itemName) {
 // ============================
 
 function handlePaginatedResponse(allItems, category, categoryDisplayName, sessionId, cityName = null, contentType = 'attractions') {
+  console.log('🔍 handlePaginatedResponse called with:', {
+    itemsCount: allItems?.length,
+    category,
+    categoryDisplayName, 
+    contentType,
+    cityName
+  });
   const ITEMS_PER_PAGE = 10;
   const totalCount = allItems.length;
   
@@ -1190,16 +1197,27 @@ function determineActivityType(activityData) {
 
 async function handleAllActivities(sessionId) {
   try {
+    console.log('🔍 Starting handleAllActivities');
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Activities`);
+    console.log('📊 API Response:', response.data?.length, 'activities found');
+    console.log('📝 First activity:', response.data?.[0]);
+    
     const allActivities = response.data;
     
     if (!allActivities || allActivities.length === 0) {
+      console.log('❌ No activities found');
       return { fulfillmentText: "No activities found at the moment." };
     }
 
+    console.log('✅ Calling handlePaginatedResponse with:', {
+      itemsCount: allActivities.length,
+      category: 'all_activities', 
+      contentType: 'activities'
+    });
+
     return handlePaginatedResponse(allActivities, 'all_activities', 'activities', sessionId, null, 'activities');
   } catch (error) {
-    console.error('Error fetching all activities:', error);
+    console.error('❌ Error in handleAllActivities:', error);
     return { fulfillmentText: "Having trouble accessing activities database." };
   }
 }
