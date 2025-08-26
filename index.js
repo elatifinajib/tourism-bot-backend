@@ -29,7 +29,7 @@ let tokenExpiry = null;
 async function initializeGoogleAuth() {
   try {
     console.log('🔑 Initializing Google Auth...');
-    
+
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
       const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
       const { GoogleAuth } = require('google-auth-library');
@@ -90,7 +90,7 @@ async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
     try {
       const response = await axios.get(url, {
         timeout: timeoutMs,
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Tourism-Bot/1.0'
         }
@@ -98,7 +98,7 @@ async function makeApiCall(url, maxRetries = 3, timeoutMs = 30000) {
       return response;
     } catch (error) {
       if (attempt === maxRetries) throw error;
-      
+
       const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
@@ -124,10 +124,10 @@ async function tryMultipleCityVariants(cityName) {
       );
 
       if (response.data && response.data.length > 0) {
-        const newResults = response.data.filter(newItem => 
+        const newResults = response.data.filter(newItem =>
           !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
         );
-        
+
         allResults = [...allResults, ...newResults];
         successfulVariant = variant;
       }
@@ -156,7 +156,7 @@ function saveSessionData(sessionId, data) {
 
 function getSessionData(sessionId) {
   const data = sessionStorage.get(sessionId);
-  
+
   if (data) {
     // Expire after 1 hour
     if (Date.now() - data.timestamp > 60 * 60 * 1000) {
@@ -164,7 +164,7 @@ function getSessionData(sessionId) {
       return null;
     }
   }
-  
+
   return data;
 }
 
@@ -203,15 +203,15 @@ function determineAttractionType(attractionData) {
   } else {
     const name = (attractionData.name || '').toLowerCase();
     const description = (attractionData.description || '').toLowerCase();
-    
-    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') || 
-        description.includes('natural') || description.includes('nature')) {
+
+    if (name.includes('gorge') || name.includes('oasis') || name.includes('desert') ||
+      description.includes('natural') || description.includes('nature')) {
       return 'natural';
     } else if (name.includes('kasbah') || name.includes('mosque') || name.includes('museum') ||
-               description.includes('cultural') || description.includes('heritage')) {
+      description.includes('cultural') || description.includes('heritage')) {
       return 'cultural';
     } else if (name.includes('palace') || name.includes('fortress') || name.includes('ruins') ||
-               description.includes('historical') || description.includes('ancient')) {
+      description.includes('historical') || description.includes('ancient')) {
       return 'historical';
     } else {
       return 'artificial';
@@ -249,7 +249,7 @@ function determineAmenityType(amenityData) {
   else {
     const name = (amenityData.name || '').toLowerCase();
     const description = (amenityData.description || '').toLowerCase();
-    
+
     if (name.includes('restaurant') || description.includes('restaurant') || description.includes('food')) {
       return 'restaurant';
     } else if (name.includes('hotel') || description.includes('hotel')) {
@@ -286,7 +286,7 @@ app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     console.log(`🔄 Processing: "${message}" (session: ${sessionId})`);
-    
+
     if (googleAuth) {
       const token = await getGoogleAccessToken();
       const sessionPath = `projects/${PROJECT_ID}/agent/sessions/${sessionId}`;
@@ -312,13 +312,13 @@ app.post('/dialogflow-proxy', async (req, res) => {
       const queryResult = dialogflowResponse.data.queryResult;
       const response = await processDialogflowResponse(queryResult, sessionId);
       return res.json(response);
-      
+
     } else {
       return res.status(500).json({
         fulfillmentText: "Dialogflow service unavailable"
       });
     }
-    
+
   } catch (error) {
     console.error('❌ Proxy error:', error);
     res.status(500).json({
@@ -334,84 +334,98 @@ app.post('/dialogflow-proxy', async (req, res) => {
 async function processDialogflowResponse(queryResult, sessionId) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
-  
+
   console.log(`🎯 Processing intent: ${intentName}`);
-  
+
   try {
     switch (intentName) {
       // ATTRACTIONS INTENTS (existants - inchangés)
       case 'Ask_All_Attractions':
         return await handleAllAttractions(sessionId);
-      
+
       case 'Ask_Natural_Attractions':
         return await handleNaturalAttractions(sessionId);
-      
+
       case 'Ask_Cultural_Attractions':
         return await handleCulturalAttractions(sessionId);
-      
+
       case 'Ask_Historical_Attractions':
         return await handleHistoricalAttractions(sessionId);
-      
+
       case 'Ask_Artificial_Attractions':
         return await handleArtificialAttractions(sessionId);
-      
+
       case 'Ask_Attractions_By_City':
         const cityNameAttr = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAttractionsByCity(sessionId, cityNameAttr);
-      
+
       case 'Ask_Attraction_Details':
         const attractionName = parameters['attraction-name'] || parameters.name;
         return await handleAttractionDetails(sessionId, attractionName);
-      
+
       // 🆕 AMENITIES INTENTS (vos noms exacts)
       case 'Ask_All_Amenities':
         return await handleAllAmenities(sessionId);
-      
+
       case 'Ask_Restaurants':
         return await handleRestaurants(sessionId);
-      
+
       case 'Ask_Hotels':
         return await handleHotels(sessionId);
-      
+
       case 'Ask_Lodges':
         return await handleLodges(sessionId);
-      
+
       case 'Ask_GuestHouses':
         return await handleGuestHouses(sessionId);
-      
+
       case 'Ask_Camping':
         return await handleCamping(sessionId);
-      
+
       case 'Ask_Cafes':
         return await handleCafes(sessionId);
-      
+
       case 'Ask_Amenities_By_City':
         const cityNameAmen = parameters.city || parameters['geo-city'] || parameters.name;
         return await handleAmenitiesByCity(sessionId, cityNameAmen);
-      
+
       case 'Ask_Amenity_Details':
         const amenityName = parameters['amenity-name'] || parameters.name;
         return await handleAmenityDetails(sessionId, amenityName);
-      
+
+      case 'Ask_All_Activities':
+        return await handleAllActivities(sessionId);
+
+      case 'Ask_Traditional_Activities':
+        return await handleTraditionalActivities(sessionId);
+
+      case 'Ask_Sportive_Activities':
+        return await handleSportiveActivities(sessionId);
+
+      case 'Ask_Cultural_Activities':
+        return await handleCulturalActivities(sessionId);
+
+      case 'Ask_Adventure_Activities':
+        return await handleAdventureActivities(sessionId);
       // SHARED INTENTS (inchangés)
       case 'Pagination_ShowMore':
         return await handleShowMore(sessionId);
-      
+
       case 'Pagination_Decline':
         return handleDecline(sessionId);
-      
+
       case 'Show_Attraction_On_Map':
       case 'Map_Request_Yes':
         return await handleShowItemOnMap(sessionId); // Fonction unifiée attractions + amenities
-      
+
       case 'Map_Request_No':
         return handleMapDecline(sessionId);
-      
+
       case 'Default Welcome Intent':
         return {
           fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, restaurants, hotels, lodges, guest houses, camping sites, cafes and more."
         };
-        
+
       default:
         return {
           fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, restaurants, hotels, or other services.`
@@ -425,6 +439,90 @@ async function processDialogflowResponse(queryResult, sessionId) {
   }
 }
 
+// ACTIVITIES HANDLERS (Nouvelles fonctions)
+// ============================
+
+async function handleAllActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Activities`);
+    const allActivities = response.data;
+
+    if (!allActivities || allActivities.length === 0) {
+      return { fulfillmentText: "No activities found at the moment." };
+    }
+
+    return handlePaginatedResponse(allActivities, 'all_activities', 'activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('❌ Error fetching all activities:', error);
+    return { fulfillmentText: "Having trouble accessing activities database." };
+  }
+}
+
+async function handleTraditionalActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Traditional`);
+    const activities = response.data;
+
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No traditional activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'traditional_activities', 'traditional activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('❌ Error fetching traditional activities:', error);
+    return { fulfillmentText: "Having trouble finding traditional activities." };
+  }
+}
+
+async function handleSportiveActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Sportive`);
+    const activities = response.data;
+
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No sportive activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'sportive_activities', 'sportive activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('❌ Error fetching sportive activities:', error);
+    return { fulfillmentText: "Having trouble finding sportive activities." };
+  }
+}
+
+async function handleCulturalActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Cultural`);
+    const activities = response.data;
+
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No cultural activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'cultural_activities', 'cultural activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('❌ Error fetching cultural activities:', error);
+    return { fulfillmentText: "Having trouble finding cultural activities." };
+  }
+}
+
+async function handleAdventureActivities(sessionId) {
+  try {
+    const response = await makeApiCall(`${API_BASE_URL}/api/public/Activity/Adventure`);
+    const activities = response.data;
+
+    if (!activities || activities.length === 0) {
+      return { fulfillmentText: "No adventure activities found." };
+    }
+
+    return handlePaginatedResponse(activities, 'adventure_activities', 'adventure activities', sessionId, null, 'activities');
+  } catch (error) {
+    console.error('❌ Error fetching adventure activities:', error);
+    return { fulfillmentText: "Having trouble finding adventure activities." };
+  }
+}
+
+
 // 🆕 NOUVELLE FONCTION: handleAmenityDetails (séparée d'handleAttractionDetails)
 async function handleAmenityDetails(sessionId, amenityName) {
   try {
@@ -435,7 +533,7 @@ async function handleAmenityDetails(sessionId, amenityName) {
     }
 
     console.log(`🔍 Fetching details for amenity: ${amenityName}`);
-    
+
     const response = await makeApiCall(
       `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(amenityName)}`
     );
@@ -447,16 +545,16 @@ async function handleAmenityDetails(sessionId, amenityName) {
     }
 
     const amenityData = response.data[0];
-    
+
     // Vérifier que c'est bien une amenity (pas une attraction)
     if (!isAmenity(amenityData)) {
       return {
         fulfillmentText: `"${amenityName}" appears to be an attraction, not an amenity. Try asking "Tell me about ${amenityName}" for attraction details.`
       };
     }
-    
+
     const amenityType = determineAmenityType(amenityData);
-    
+
     console.log(`✅ Found amenity (${amenityType}): ${amenityData.name}`);
 
     // Sauvegarder les données pour le flux map
@@ -486,13 +584,13 @@ async function handleAmenityDetails(sessionId, amenityName) {
 
   } catch (error) {
     console.error(`❌ Error fetching amenity details for ${amenityName}:`, error);
-    
+
     if (error.response?.status === 404) {
       return {
         fulfillmentText: `I couldn't find an amenity named "${amenityName}". Please check the name or try searching for something similar.`
       };
     }
-    
+
     return {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${amenityName}" right now. Please try again later.`
     };
@@ -506,7 +604,7 @@ async function handleAllAmenities(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Amenities`);
     const allAmenities = response.data;
-    
+
     if (!allAmenities || allAmenities.length === 0) {
       return { fulfillmentText: "No amenities found at the moment." };
     }
@@ -522,7 +620,7 @@ async function handleRestaurants(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Restaurants`);
     const restaurants = response.data;
-    
+
     if (!restaurants || restaurants.length === 0) {
       return { fulfillmentText: "No restaurants found." };
     }
@@ -538,7 +636,7 @@ async function handleHotels(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Hotels`);
     const hotels = response.data;
-    
+
     if (!hotels || hotels.length === 0) {
       return { fulfillmentText: "No hotels found." };
     }
@@ -554,7 +652,7 @@ async function handleLodges(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Lodges`);
     const lodges = response.data;
-    
+
     if (!lodges || lodges.length === 0) {
       return { fulfillmentText: "No lodges found." };
     }
@@ -570,7 +668,7 @@ async function handleGuestHouses(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/GuestHouses`);
     const guestHouses = response.data;
-    
+
     if (!guestHouses || guestHouses.length === 0) {
       return { fulfillmentText: "No guest houses found." };
     }
@@ -586,7 +684,7 @@ async function handleCamping(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Camping`);
     const camping = response.data;
-    
+
     if (!camping || camping.length === 0) {
       return { fulfillmentText: "No camping sites found." };
     }
@@ -602,7 +700,7 @@ async function handleCafes(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/Cafes`);
     const cafes = response.data;
-    
+
     if (!cafes || cafes.length === 0) {
       return { fulfillmentText: "No cafes found." };
     }
@@ -623,7 +721,7 @@ async function handleAmenitiesByCity(sessionId, cityName) {
     }
 
     const cityResult = await tryMultipleCityVariants(cityName);
-    
+
     if (!cityResult.success) {
       return {
         fulfillmentText: `I couldn't find amenities information about "${cityName}". Try another city.`
@@ -640,7 +738,7 @@ async function handleAmenitiesByCity(sessionId, cityName) {
     }
 
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-    
+
     return handlePaginatedResponse(amenities, `city_amenities_${cityName.toLowerCase()}`, `amenities in ${formattedCityName}`, sessionId, formattedCityName, 'amenities');
   } catch (error) {
     console.error(`❌ Error finding amenities in ${cityName}:`, error);
@@ -658,7 +756,7 @@ async function handleAllAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/getAll/Attraction`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No attractions found at the moment." };
     }
@@ -674,7 +772,7 @@ async function handleNaturalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/NaturalAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No natural attractions found." };
     }
@@ -690,7 +788,7 @@ async function handleCulturalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/CulturalAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No cultural attractions found." };
     }
@@ -706,7 +804,7 @@ async function handleHistoricalAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/HistoricalAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No historical attractions found." };
     }
@@ -722,7 +820,7 @@ async function handleArtificialAttractions(sessionId) {
   try {
     const response = await makeApiCall(`${API_BASE_URL}/api/public/ArtificialAttractions`);
     const allAttractions = response.data;
-    
+
     if (!allAttractions || allAttractions.length === 0) {
       return { fulfillmentText: "No artificial attractions found." };
     }
@@ -743,7 +841,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
     }
 
     const cityResult = await tryMultipleCityVariants(cityName);
-    
+
     if (!cityResult.success) {
       return {
         fulfillmentText: `I couldn't find information about "${cityName}". Try another city.`
@@ -760,7 +858,7 @@ async function handleAttractionsByCity(sessionId, cityName) {
     }
 
     const formattedCityName = cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase();
-    
+
     return handlePaginatedResponse(attractions, `city_${cityName.toLowerCase()}`, `attractions in ${formattedCityName}`, sessionId, formattedCityName);
   } catch (error) {
     console.error(`❌ Error finding attractions in ${cityName}:`, error);
@@ -783,7 +881,7 @@ async function handleItemDetails(sessionId, itemName) {
     }
 
     console.log(`🔍 Fetching details for item: ${itemName}`);
-    
+
     const response = await makeApiCall(
       `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`
     );
@@ -795,7 +893,7 @@ async function handleItemDetails(sessionId, itemName) {
     }
 
     const itemData = response.data[0];
-    
+
     // Déterminer si c'est une attraction ou une amenity
     let itemType, category;
     if (isAttraction(itemData)) {
@@ -808,7 +906,7 @@ async function handleItemDetails(sessionId, itemName) {
       itemType = 'location';
       category = 'general';
     }
-    
+
     console.log(`✅ Found ${itemType} (${category}): ${itemData.name}`);
 
     // Sauvegarder les données pour le flux map
@@ -839,13 +937,13 @@ async function handleItemDetails(sessionId, itemName) {
 
   } catch (error) {
     console.error(`❌ Error fetching item details for ${itemName}:`, error);
-    
+
     if (error.response?.status === 404) {
       return {
         fulfillmentText: `I couldn't find a place named "${itemName}". Please check the name or try searching for something similar.`
       };
     }
-    
+
     return {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${itemName}" right now. Please try again later.`
     };
@@ -859,15 +957,15 @@ async function handleItemDetails(sessionId, itemName) {
 function handlePaginatedResponse(allItems, category, categoryDisplayName, sessionId, cityName = null, contentType = 'attractions') {
   const ITEMS_PER_PAGE = 10;
   const totalCount = allItems.length;
-  
+
   // Messages selon le type de contenu
   const getDisplayMessage = (count, isFirst = false) => {
     const prefix = isFirst ? `I found ${count}` : `Here are all the remaining`;
-    
+
     if (cityName) {
       return `${prefix} ${contentType} in ${cityName}!`;
     }
-    
+
     const contentMessages = {
       'attractions': {
         'all': `${prefix} amazing attractions in Draa-Tafilalet!`,
@@ -884,12 +982,20 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
         'guesthouses': `${prefix} welcoming guest houses!`,
         'camping': `${prefix} camping sites!`,
         'cafes': `${prefix} lovely cafes!`
+      },
+      // AJOUTER ACTIVITIES MESSAGES
+      'activities': {
+        'all_activities': `${prefix} exciting activities in Draa-Tafilalet!`,
+        'traditional_activities': `${prefix} authentic traditional activities!`,
+        'sportive_activities': `${prefix} thrilling sportive activities!`,
+        'cultural_activities': `${prefix} enriching cultural activities!`,
+        'adventure_activities': `${prefix} amazing adventure activities!`
       }
     };
-    
+
     return contentMessages[contentType]?.[category] || `${prefix} ${categoryDisplayName}!`;
   };
-  
+
   if (totalCount <= ITEMS_PER_PAGE) {
     return {
       fulfillmentText: getDisplayMessage(totalCount, true),
@@ -914,7 +1020,7 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
     const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
     const remainingItems = allItems.slice(ITEMS_PER_PAGE);
     const remainingCount = remainingItems.length;
-    
+
     saveSessionData(sessionId, {
       remainingItems,
       category,
@@ -952,7 +1058,7 @@ function handlePaginatedResponse(allItems, category, categoryDisplayName, sessio
 
 async function handleShowMore(sessionId) {
   const sessionData = getSessionData(sessionId);
-  
+
   if (!sessionData || !sessionData.remainingItems || sessionData.remainingItems.length === 0) {
     return {
       fulfillmentText: "I don't have any additional items to show right now."
@@ -960,10 +1066,10 @@ async function handleShowMore(sessionId) {
   }
 
   const { remainingItems, category, categoryDisplayName, cityName, contentType } = sessionData;
-  
+
   sessionStorage.delete(sessionId);
 
-  const naturalResponse = cityName 
+  const naturalResponse = cityName
     ? `Perfect! Here are all the remaining ${contentType} in ${cityName}:`
     : `Perfect! Here are all the remaining ${categoryDisplayName}:`;
 
@@ -992,7 +1098,7 @@ function handleDecline(sessionId) {
   if (sessionId) {
     sessionStorage.delete(sessionId);
   }
-  
+
   return {
     fulfillmentText: "No problem! I'm here whenever you need help discovering places in Draa-Tafilalet. Just ask me anytime!"
   };
@@ -1005,7 +1111,7 @@ function handleDecline(sessionId) {
 async function handleShowItemOnMap(sessionId) {
   try {
     const sessionData = getSessionData(sessionId);
-    
+
     if (!sessionData) {
       return {
         fulfillmentText: "I don't have location information available. Please ask about a specific place first."
@@ -1015,7 +1121,7 @@ async function handleShowItemOnMap(sessionId) {
     // Supporter les deux types de données
     const itemData = sessionData.attractionData || sessionData.amenityData;
     const itemType = sessionData.attractionData ? 'attraction' : 'amenity';
-    
+
     if (!itemData) {
       return {
         fulfillmentText: "I don't have location information available. Please ask about a specific place first."
@@ -1025,10 +1131,10 @@ async function handleShowItemOnMap(sessionId) {
     const lat = itemData.latitude;
     const lng = itemData.longitude;
     const name = itemData.name;
-    
+
     // Créer le lien Google Maps
     const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
-    
+
     // Nettoyer la session
     sessionStorage.delete(sessionId);
 
@@ -1057,7 +1163,7 @@ function handleMapDecline(sessionId) {
   if (sessionId) {
     sessionStorage.delete(sessionId);
   }
-  
+
   return {
     fulfillmentText: "No problem! Is there anything else you'd like to know about this place or would you like to explore other locations?"
   };
@@ -1072,7 +1178,7 @@ async function handleAttractionDetails(sessionId, attractionName) {
     }
 
     console.log(`🔍 Fetching details for attraction: ${attractionName}`);
-    
+
     const response = await makeApiCall(
       `${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(attractionName)}`
     );
@@ -1084,16 +1190,16 @@ async function handleAttractionDetails(sessionId, attractionName) {
     }
 
     const attractionData = response.data[0];
-    
+
     // Vérifier que c'est bien une attraction (pas une amenity)
     if (!isAttraction(attractionData)) {
       return {
         fulfillmentText: `"${attractionName}" appears to be an amenity, not an attraction. Try asking "Tell me about ${attractionName}" for amenity details.`
       };
     }
-    
+
     const attractionType = determineAttractionType(attractionData);
-    
+
     console.log(`✅ Found attraction (${attractionType}): ${attractionData.name}`);
 
     // Sauvegarder les données pour le flux map
@@ -1123,13 +1229,13 @@ async function handleAttractionDetails(sessionId, attractionName) {
 
   } catch (error) {
     console.error(`❌ Error fetching attraction details for ${attractionName}:`, error);
-    
+
     if (error.response?.status === 404) {
       return {
         fulfillmentText: `I couldn't find an attraction named "${attractionName}". Please check the name or try searching for something similar.`
       };
     }
-    
+
     return {
       fulfillmentText: `Sorry, I'm having trouble retrieving details about "${attractionName}" right now. Please try again later.`
     };
@@ -1142,16 +1248,16 @@ async function handleAttractionDetails(sessionId, attractionName) {
 function sendItemDetailsText(itemData, itemType, category) {
   let message = `**${itemData.name}**\n\n`;
   message += `📍 **Location:** ${itemData.cityName}, ${itemData.countryName}\n\n`;
-  
+
   if (itemData.description) {
     message += `📝 **Description:**\n${itemData.description}\n\n`;
   }
-  
+
   if (itemType === 'attraction') {
     // Attraction-specific details
     message += `💰 **Entry Fee:** ${itemData.entryFre == 0 ? 'Free' : itemData.entryFre + ' MAD'}\n`;
     message += `🎯 **Guided Tours:** ${itemData.guideToursAvailable ? 'Available' : 'Not Available'}\n`;
-    
+
     // Add type-specific info
     switch (category) {
       case 'natural':
@@ -1159,7 +1265,7 @@ function sendItemDetailsText(itemData, itemType, category) {
           message += `🌿 **Protected Area:** ${itemData.protectedArea ? 'Yes - Protected Natural Site' : 'No'}\n`;
         }
         break;
-        
+
       case 'cultural':
       case 'historical':
       case 'artificial':
@@ -1176,7 +1282,7 @@ function sendItemDetailsText(itemData, itemType, category) {
     message += `💰 **Price Range:** ${itemData.price == 0 ? 'Free' : itemData.price + ' MAD'}\n`;
     message += `🕐 **Opening Hours:** ${itemData.openingHours}\n`;
     message += `✅ **Available:** ${itemData.available ? 'Yes' : 'No'}\n`;
-    
+
     // Add amenity type-specific info
     switch (category) {
       case 'restaurant':
@@ -1187,7 +1293,7 @@ function sendItemDetailsText(itemData, itemType, category) {
           message += `📋 **Menu:** ${itemData.menu}\n`;
         }
         break;
-        
+
       case 'hotel':
         if (itemData.numberStars) {
           message += `⭐ **Stars:** ${itemData.numberStars}\n`;
@@ -1199,7 +1305,7 @@ function sendItemDetailsText(itemData, itemType, category) {
           message += `🏊 **Swimming Pool:** ${itemData.hasSwimmingPool ? 'Available' : 'Not Available'}\n`;
         }
         break;
-        
+
       case 'lodge':
         if (itemData.viewPanoramic !== undefined) {
           message += `🏔️ **Panoramic View:** ${itemData.viewPanoramic ? 'Available' : 'Not Available'}\n`;
@@ -1208,7 +1314,7 @@ function sendItemDetailsText(itemData, itemType, category) {
           message += `🌲 **Close to Nature:** ${itemData.closeNature ? 'Yes' : 'No'}\n`;
         }
         break;
-        
+
       case 'guesthouse':
         if (itemData.numberRooms) {
           message += `🏠 **Number of Rooms:** ${itemData.numberRooms}\n`;
@@ -1217,7 +1323,7 @@ function sendItemDetailsText(itemData, itemType, category) {
           message += `🍳 **Breakfast Included:** ${itemData.breakfastIncluded ? 'Yes' : 'No'}\n`;
         }
         break;
-        
+
       case 'camping':
         if (itemData.capacity) {
           message += `👥 **Capacity:** ${itemData.capacity} people\n`;
@@ -1232,7 +1338,7 @@ function sendItemDetailsText(itemData, itemType, category) {
           message += `🚿 **Sanitary Facilities:** ${itemData.sanitaryAvailability ? 'Available' : 'Not Available'}\n`;
         }
         break;
-        
+
       case 'cafe':
         if (itemData.wifiAvailable !== undefined) {
           message += `📶 **WiFi:** ${itemData.wifiAvailable ? 'Available' : 'Not Available'}\n`;
@@ -1243,11 +1349,35 @@ function sendItemDetailsText(itemData, itemType, category) {
         break;
     }
   }
-  
+
+
   // Question pour la carte
   message += `\n🗺️ Would you like to see this place on the map?`;
-  
+
   return message;
+}
+
+// Fonction pour détecter si c'est une activité
+function isActivity(item) {
+  return item.hasOwnProperty('duration') &&
+    item.hasOwnProperty('ageLimit') &&
+    item.hasOwnProperty('cityOfTheActivity') &&
+    item.hasOwnProperty('locationOfTheActivity');
+}
+
+// Fonction pour déterminer le type d'activité
+function determineActivityType(activityData) {
+  if (activityData.hasOwnProperty('craftType')) {
+    return 'traditional';
+  } else if (activityData.hasOwnProperty('typeSport')) {
+    return 'sportive';
+  } else if (activityData.hasOwnProperty('traditionAssociated')) {
+    return 'cultural';
+  } else if (activityData.hasOwnProperty('terrainType') && activityData.hasOwnProperty('ageRestriction')) {
+    return 'adventure';
+  } else {
+    return 'activity';
+  }
 }
 
 // ============================
