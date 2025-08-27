@@ -312,15 +312,15 @@ class ContentHandler {
       const response = await ApiService.makeCall(url);
       
       console.log(`📊 Response status: ${response.status}`);
-      console.log(`📊 Response data length: ${response.data?.length || 0}`);
       console.log(`📊 Response data:`, JSON.stringify(response.data, null, 2));
 
-      if (!response.data?.length) {
+      // L'API retourne un objet unique, pas un array
+      if (!response.data || Object.keys(response.data).length === 0) {
         return { fulfillmentText: `I couldn't find detailed information about "${activityName}". Please check the spelling.` };
       }
 
-      const itemData = response.data[0];
-      console.log(`📊 First item data:`, JSON.stringify(itemData, null, 2));
+      const itemData = response.data; // Pas response.data[0] car c'est un objet unique
+      console.log(`📊 Item data:`, JSON.stringify(itemData, null, 2));
       
       const isCorrectType = TypeDetector.isActivity(itemData);
       console.log(`📊 Is activity type: ${isCorrectType}`);
