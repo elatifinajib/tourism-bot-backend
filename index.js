@@ -460,6 +460,7 @@ class ContentHandler {
         [`${itemType}Type`]: category,
         waitingForDetailsText: true,
         waitingForMapResponse: true,
+        waitingForActivitiesAroundRequest: itemType === 'attraction', // NOUVEAU: seulement pour attractions
         [`${itemType}Name`]: itemData.name
       });
 
@@ -582,6 +583,7 @@ const IntentHandlers = {
   handleActivityDetails: (sessionId, activityName) => ContentHandler.handleActivityDetails(sessionId, activityName),
   handleActivitiesByLocation: (sessionId, locationName) => ContentHandler.handleActivitiesByLocation(sessionId, locationName),
   handleActivityDetailsFromLocation: (sessionId, activityName) => ContentHandler.handleActivityDetailsFromLocation(sessionId, activityName),
+  handleActivitiesAroundAttraction: (sessionId) => IntentHandlers.handleActivitiesAroundAttraction(sessionId),
 
   // Shared handlers
   async handleShowMore(sessionId) {
@@ -643,10 +645,23 @@ const IntentHandlers = {
       const { latitude: lat, longitude: lng, name } = itemData;
       const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
       
-      SessionManager.delete(sessionId);
+      // MODIFIER: Ne pas supprimer la session si c'est une attraction
+      if (itemType === 'attraction') {
+        SessionManager.save(sessionId, {
+          ...sessionData,
+          waitingForMapResponse: false,
+          waitingForActivitiesAroundRequest: true // Attendre la demande d'activités
+        });
+      } else {
+        SessionManager.delete(sessionId);
+      }
+
+      const baseMessage = `Here you can find ${name} on the map: `;
+      const additionalMessage = itemType === 'attraction' ? 
+        `\n\nWould you like to discover activities around ${name}?` : '';
 
       return {
-        fulfillmentText: `Here you can find ${name} on the map: `,
+        fulfillmentText: baseMessage + additionalMessage,
         payload: {
           flutter: {
             type: 'map_location',
@@ -664,8 +679,43 @@ const IntentHandlers = {
   },
 
   handleMapDecline(sessionId) {
+    const sessionData = SessionManager.get(sessionId);
+    
+    // Vérifier s'il faut proposer les activités autour de l'attraction
+    if (sessionData?.waitingForActivitiesAroundRequest && sessionData.attractionData) {
+      const attractionName = sessionData.attractionData.name;
+      // Garder la session pour la prochaine demande possible
+      SessionManager.save(sessionId, {
+        ...sessionData,
+        waitingForMapResponse: false, // Plus besoin de la carte
+        waitingForActivitiesAroundRequest: true // Toujours en attente des activités
+      });
+      
+      return { fulfillmentText: `No problem! Would you like to discover activities around ${attractionName}?` };
+    }
+    
     SessionManager.delete(sessionId);
     return { fulfillmentText: "No problem! Is there anything else you'd like to know about this place or would you like to explore other locations?" };
+  },
+
+  async handleActivitiesAroundAttraction(sessionId) {
+    try {
+      const sessionData = SessionManager.get(sessionId);
+      
+      if (!sessionData?.attractionData) {
+        return { fulfillmentText: "I don't have attraction information available. Please ask about a specific attraction first." };
+      }
+
+      const attractionName = sessionData.attractionData.name;
+      
+      // Nettoyer la session avant d'appeler les activités par location
+      SessionManager.delete(sessionId);
+      
+      // Utiliser le handler existant pour les activités par location
+      return IntentHandlers.handleActivitiesByLocation(sessionId, attractionName);
+    } catch (error) {
+      return { fulfillmentText: "Sorry, I couldn't retrieve activities around this attraction right now." };
+    }
   }
 };
 
@@ -767,6 +817,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
         return IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']);
       },
       'Ask_Activities_By_Location': () => IntentHandlers.handleActivitiesByLocation(sessionId, parameters['attraction-name'] || parameters['amenity-name'] || parameters.name),
+      'Ask_Activities_Around_Attraction': () => IntentHandlers.handleActivitiesAroundAttraction(sessionId),
 
       // Shared intents
       'Pagination_ShowMore': () => IntentHandlers.handleShowMore(sessionId),
