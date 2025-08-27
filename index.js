@@ -247,7 +247,8 @@ const API_ENDPOINTS = {
     traditional: '/api/public/Activity/Traditional',
     sportive: '/api/public/Activity/Sportive',
     cultural: '/api/public/Activity/Cultural',
-    adventure: '/api/public/Activity/Adventure'
+    adventure: '/api/public/Activity/Adventure',
+    byLocation: '/api/public/getActivityByLocation'
   }
 };
 
@@ -299,40 +300,52 @@ class ContentHandler {
     }
   }
 
+  static async handleActivitiesByLocation(sessionId, locationName) {
+    if (!locationName) {
+      return { fulfillmentText: `Please tell me which location you're interested in for activities.` };
+    }
+
+    try {
+      const response = await ApiService.makeCall(`${API_BASE_URL}${API_ENDPOINTS.activities.byLocation}/${encodeURIComponent(locationName)}`);
+      
+      if (!response.data?.length) {
+        return { fulfillmentText: `I couldn't find activities at "${locationName}". Try another location.` };
+      }
+
+      const activities = response.data;
+      const formattedLocationName = locationName.charAt(0).toUpperCase() + locationName.slice(1).toLowerCase();
+      
+      return this.createPaginationResponse(activities, `location_activities_${locationName.toLowerCase()}`, sessionId, formattedLocationName, 'activities');
+    } catch (error) {
+      console.error(`❌ Error finding activities at ${locationName}:`, error);
+      return { fulfillmentText: `Having trouble finding activities at ${locationName}.` };
+    }
+  }
+
   static async handleActivityDetails(sessionId, activityName) {
     if (!activityName) {
       return { fulfillmentText: `Please tell me which activity you'd like to know more about.` };
     }
 
     try {
-      console.log(`🔍 Fetching details for activity: ${activityName}`);
       const url = `${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(activityName)}`;
-      console.log(`📡 Calling URL: ${url}`);
-      
       const response = await ApiService.makeCall(url);
       
-      console.log(`📊 Response status: ${response.status}`);
-      console.log(`📊 Response data:`, JSON.stringify(response.data, null, 2));
-
-      // L'API retourne un objet unique, pas un array
       if (!response.data || Object.keys(response.data).length === 0) {
         return { fulfillmentText: `I couldn't find detailed information about "${activityName}". Please check the spelling.` };
       }
 
-      const itemData = response.data; // Pas response.data[0] car c'est un objet unique
+      const itemData = response.data;
       console.log(`📊 Item data:`, JSON.stringify(itemData, null, 2));
       
       const isCorrectType = TypeDetector.isActivity(itemData);
-      console.log(`📊 Is activity type: ${isCorrectType}`);
       
       if (!isCorrectType) {
         return { fulfillmentText: `"${activityName}" doesn't appear to be an activity.` };
       }
       
       const category = TypeDetector.determineActivityType(itemData);
-      console.log(`✅ Found activity (${category}): ${itemData.name}`);
 
-      // Pas de session pour map car pas de coordonnées
       return {
         fulfillmentText: "",
         payload: {
@@ -348,8 +361,6 @@ class ContentHandler {
         }
       };
     } catch (error) {
-      console.error(`❌ Error fetching activity details:`, error);
-      console.error(`❌ Error details:`, error.response?.data || error.message);
       return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${activityName}".` };
     }
   }
@@ -360,7 +371,6 @@ class ContentHandler {
     }
 
     try {
-      console.log(`🔍 Fetching details for ${itemType}: ${itemName}`);
       const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
 
       if (!response.data?.length) {
@@ -382,8 +392,6 @@ class ContentHandler {
       if (!isCorrectType) {
         return { fulfillmentText: `"${itemName}" doesn't appear to be an ${itemType}.` };
       }
-      
-      console.log(`✅ Found ${itemType} (${category}): ${itemData.name}`);
 
       SessionManager.save(sessionId, {
         [`${itemType}Data`]: itemData,
@@ -408,7 +416,6 @@ class ContentHandler {
         }
       };
     } catch (error) {
-      console.error(`❌ Error fetching ${itemType} details:`, error);
       return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${itemName}".` };
     }
   }
@@ -418,7 +425,12 @@ class ContentHandler {
     
     const getDisplayMessage = (count, isFirst = false) => {
       const prefix = isFirst ? `I found ${count}` : `Here are all the remaining`;
-      return cityName ? `${prefix} ${contentType} in ${cityName}!` : `${prefix} ${contentType}!`;
+      if (cityName && contentType === 'activities') {
+        return `${prefix} activities at ${cityName}!`;
+      } else if (cityName) {
+        return `${prefix} ${contentType} in ${cityName}!`;
+      }
+      return `${prefix} ${contentType}!`;
     };
     
     const getActions = () => [
@@ -506,6 +518,7 @@ const IntentHandlers = {
   handleCulturalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.cultural, 'cultural', sessionId, 'activities'),
   handleAdventureActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.adventure, 'adventure', sessionId, 'activities'),
   handleActivityDetails: (sessionId, activityName) => ContentHandler.handleActivityDetails(sessionId, activityName),
+  handleActivitiesByLocation: (sessionId, locationName) => ContentHandler.handleActivitiesByLocation(sessionId, locationName),
 
   // Shared handlers
   async handleShowMore(sessionId) {
@@ -518,9 +531,14 @@ const IntentHandlers = {
     const { remainingItems, category, cityName, contentType } = sessionData;
     SessionManager.delete(sessionId);
 
-    const naturalResponse = cityName 
-      ? `Perfect! Here are all the remaining ${contentType} in ${cityName}:`
-      : `Perfect! Here are all the remaining ${contentType}:`;
+    let naturalResponse;
+    if (contentType === 'activities' && cityName) {
+      naturalResponse = `Perfect! Here are all the remaining activities at ${cityName}:`;
+    } else if (cityName) {
+      naturalResponse = `Perfect! Here are all the remaining ${contentType} in ${cityName}:`;
+    } else {
+      naturalResponse = `Perfect! Here are all the remaining ${contentType}:`;
+    }
 
     return {
       fulfillmentText: naturalResponse,
@@ -578,7 +596,6 @@ const IntentHandlers = {
         }
       };
     } catch (error) {
-      console.error('❌ Error showing item on map:', error);
       return { fulfillmentText: "Sorry, I couldn't retrieve the location information right now." };
     }
   },
@@ -680,6 +697,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
       'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']),
+      'Ask_Activities_By_Location': () => IntentHandlers.handleActivitiesByLocation(sessionId, parameters['attraction-name'] || parameters['amenity-name'] || parameters.name),
 
       // Shared intents
       'Pagination_ShowMore': () => IntentHandlers.handleShowMore(sessionId),
