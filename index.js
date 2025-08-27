@@ -315,14 +315,79 @@ class ContentHandler {
       const activities = response.data;
       const formattedLocationName = locationName.charAt(0).toUpperCase() + locationName.slice(1).toLowerCase();
       
-      return this.createPaginationResponse(activities, `location_activities_${locationName.toLowerCase()}`, sessionId, formattedLocationName, 'activities');
+      // Sauvegarder les activités dans la session pour permettre les détails
+      SessionManager.save(sessionId, {
+        locationActivities: activities,
+        locationName: formattedLocationName,
+        waitingForActivityDetailsRequest: true
+      });
+      
+      const result = this.createPaginationResponse(activities, `location_activities_${locationName.toLowerCase()}`, sessionId, formattedLocationName, 'activities');
+      
+      // Modifier le message pour inclure l'invitation aux détails
+      const additionalMessage = activities.length === 1 ? 
+        `\n\nIf you'd like to know more details about this activity, just tell me the activity name!` :
+        `\n\nIf you'd like to know more details about any of these activities, just tell me the activity name!`;
+        
+      result.fulfillmentText += additionalMessage;
+      
+      return result;
     } catch (error) {
       console.error(`❌ Error finding activities at ${locationName}:`, error);
       return { fulfillmentText: `Having trouble finding activities at ${locationName}.` };
     }
   }
 
-  static async handleActivityDetails(sessionId, activityName) {
+  static async handleActivityDetailsFromLocation(sessionId, activityName) {
+    if (!activityName) {
+      return { fulfillmentText: `Please tell me which activity you'd like to know more about.` };
+    }
+
+    try {
+      const sessionData = SessionManager.get(sessionId);
+      
+      if (!sessionData?.locationActivities || !sessionData.waitingForActivityDetailsRequest) {
+        // Fallback to normal activity details if no session context
+        return this.handleActivityDetails(sessionId, activityName);
+      }
+
+      // Chercher l'activité dans la liste des activités de cette location
+      const foundActivity = sessionData.locationActivities.find(activity => 
+        activity.name.toLowerCase().includes(activityName.toLowerCase()) ||
+        activityName.toLowerCase().includes(activity.name.toLowerCase())
+      );
+
+      if (!foundActivity) {
+        const activityNames = sessionData.locationActivities.map(a => a.name).join(', ');
+        return { 
+          fulfillmentText: `I couldn't find "${activityName}" in the activities at ${sessionData.locationName}. Available activities are: ${activityNames}. Please specify the exact name.` 
+        };
+      }
+
+      const category = TypeDetector.determineActivityType(foundActivity);
+
+      // Nettoyer la session après avoir trouvé l'activité
+      SessionManager.delete(sessionId);
+
+      return {
+        fulfillmentText: "",
+        payload: {
+          flutter: {
+            type: 'activity_details',
+            category: category,
+            data: {
+              activity: foundActivity,
+              activityType: category,
+              onlyImages: true
+            }
+          }
+        }
+      };
+    } catch (error) {
+      console.error(`❌ Error getting activity details from location:`, error);
+      return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${activityName}".` };
+    }
+  }
     if (!activityName) {
       return { fulfillmentText: `Please tell me which activity you'd like to know more about.` };
     }
@@ -519,6 +584,7 @@ const IntentHandlers = {
   handleAdventureActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.adventure, 'adventure', sessionId, 'activities'),
   handleActivityDetails: (sessionId, activityName) => ContentHandler.handleActivityDetails(sessionId, activityName),
   handleActivitiesByLocation: (sessionId, locationName) => ContentHandler.handleActivitiesByLocation(sessionId, locationName),
+  handleActivityDetailsFromLocation: (sessionId, activityName) => ContentHandler.handleActivityDetailsFromLocation(sessionId, activityName),
 
   // Shared handlers
   async handleShowMore(sessionId) {
@@ -696,7 +762,13 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
-      'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']),
+      'Ask_Activity_Details': () => {
+        const sessionData = SessionManager.get(sessionId);
+        if (sessionData?.waitingForActivityDetailsRequest) {
+          return IntentHandlers.handleActivityDetailsFromLocation(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']);
+        }
+        return IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']);
+      },
       'Ask_Activities_By_Location': () => IntentHandlers.handleActivitiesByLocation(sessionId, parameters['attraction-name'] || parameters['amenity-name'] || parameters.name),
 
       // Shared intents
