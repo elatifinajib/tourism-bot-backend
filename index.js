@@ -388,6 +388,8 @@ class ContentHandler {
       return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${activityName}".` };
     }
   }
+
+  static async handleActivityDetails(sessionId, activityName) {
     if (!activityName) {
       return { fulfillmentText: `Please tell me which activity you'd like to know more about.` };
     }
