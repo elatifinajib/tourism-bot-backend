@@ -324,12 +324,7 @@ class ContentHandler {
       
       const result = this.createPaginationResponse(activities, `location_activities_${locationName.toLowerCase()}`, sessionId, formattedLocationName, 'activities');
       
-      // Modifier le message pour inclure l'invitation aux détails
-      const additionalMessage = activities.length === 1 ? 
-        `\n\nIf you'd like to know more details about this activity, just tell me the activity name!` :
-        `\n\nIf you'd like to know more details about any of these activities, just tell me the activity name!`;
-        
-      result.fulfillmentText += additionalMessage;
+      // NE PAS modifier le fulfillmentText ici - laisser le message original du carousel
       
       return result;
     } catch (error) {
