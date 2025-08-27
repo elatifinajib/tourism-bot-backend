@@ -645,34 +645,47 @@ const IntentHandlers = {
       const { latitude: lat, longitude: lng, name } = itemData;
       const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
       
-      // MODIFIER: Ne pas supprimer la session si c'est une attraction
+      // MODIFIER: Garder la session pour les attractions et proposer les activités
       if (itemType === 'attraction') {
         SessionManager.save(sessionId, {
           ...sessionData,
           waitingForMapResponse: false,
-          waitingForActivitiesAroundRequest: true // Attendre la demande d'activités
+          waitingForActivitiesAroundRequest: true
         });
-      } else {
-        SessionManager.delete(sessionId);
-      }
+        
+        const baseMessage = `Here you can find ${name} on the map: `;
+        const additionalMessage = `\n\nWould you like to discover activities around ${name}?`;
 
-      const baseMessage = `Here you can find ${name} on the map: `;
-      const additionalMessage = itemType === 'attraction' ? 
-        `\n\nWould you like to discover activities around ${name}?` : '';
-
-      return {
-        fulfillmentText: baseMessage + additionalMessage,
-        payload: {
-          flutter: {
-            type: 'map_location',
-            data: {
-              [itemType]: itemData,
-              coordinates: { latitude: lat, longitude: lng },
-              googleMapsUrl: googleMapsUrl
+        return {
+          fulfillmentText: baseMessage + additionalMessage,
+          payload: {
+            flutter: {
+              type: 'map_location',
+              data: {
+                [itemType]: itemData,
+                coordinates: { latitude: lat, longitude: lng },
+                googleMapsUrl: googleMapsUrl
+              }
             }
           }
-        }
-      };
+        };
+      } else {
+        // Pour les amenities, pas d'activités proposées
+        SessionManager.delete(sessionId);
+        return {
+          fulfillmentText: `Here you can find ${name} on the map: `,
+          payload: {
+            flutter: {
+              type: 'map_location',
+              data: {
+                [itemType]: itemData,
+                coordinates: { latitude: lat, longitude: lng },
+                googleMapsUrl: googleMapsUrl
+              }
+            }
+          }
+        };
+      }
     } catch (error) {
       return { fulfillmentText: "Sorry, I couldn't retrieve the location information right now." };
     }
@@ -682,13 +695,13 @@ const IntentHandlers = {
     const sessionData = SessionManager.get(sessionId);
     
     // Vérifier s'il faut proposer les activités autour de l'attraction
-    if (sessionData?.waitingForActivitiesAroundRequest && sessionData.attractionData) {
+    if (sessionData?.attractionData) {
       const attractionName = sessionData.attractionData.name;
       // Garder la session pour la prochaine demande possible
       SessionManager.save(sessionId, {
         ...sessionData,
-        waitingForMapResponse: false, // Plus besoin de la carte
-        waitingForActivitiesAroundRequest: true // Toujours en attente des activités
+        waitingForMapResponse: false,
+        waitingForActivitiesAroundRequest: true
       });
       
       return { fulfillmentText: `No problem! Would you like to discover activities around ${attractionName}?` };
