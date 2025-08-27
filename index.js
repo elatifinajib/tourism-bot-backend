@@ -308,7 +308,14 @@ class ContentHandler {
 
     try {
       console.log(`🔍 Fetching details for ${itemType}: ${itemName}`);
-      const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
+      
+      let response;
+      // Use specific endpoint for activities
+      if (itemType === 'activity') {
+        response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(itemName)}`);
+      } else {
+        response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
+      }
 
       if (!response.data?.length) {
         return { fulfillmentText: `I couldn't find detailed information about "${itemName}". Please check the spelling.` };
