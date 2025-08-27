@@ -103,7 +103,7 @@ class ApiService {
         const response = await this.makeCall(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`);
         if (response.data?.length > 0) {
           const newResults = response.data.filter(newItem => 
-            !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location || existingItem.id_Activity === newItem.id_Activity)
+            !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
           );
           allResults = [...allResults, ...newResults];
         }
@@ -285,8 +285,6 @@ class ContentHandler {
         items = cityResult.data.filter(location => TypeDetector.isAttraction(location));
       } else if (contentType === 'amenities') {
         items = cityResult.data.filter(location => TypeDetector.isAmenity(location));
-      } else if (contentType === 'activities') {
-        items = cityResult.data.filter(location => TypeDetector.isActivity(location));
       }
 
       if (!items?.length) {
@@ -301,6 +299,50 @@ class ContentHandler {
     }
   }
 
+  static async handleActivityDetails(sessionId, activityName) {
+    if (!activityName) {
+      return { fulfillmentText: `Please tell me which activity you'd like to know more about.` };
+    }
+
+    try {
+      console.log(`🔍 Fetching details for activity: ${activityName}`);
+      const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(activityName)}`);
+
+      if (!response.data?.length) {
+        return { fulfillmentText: `I couldn't find detailed information about "${activityName}". Please check the spelling.` };
+      }
+
+      const itemData = response.data[0];
+      const isCorrectType = TypeDetector.isActivity(itemData);
+      
+      if (!isCorrectType) {
+        return { fulfillmentText: `"${activityName}" doesn't appear to be an activity.` };
+      }
+      
+      const category = TypeDetector.determineActivityType(itemData);
+      console.log(`✅ Found activity (${category}): ${itemData.name}`);
+
+      // Pas de session pour map car pas de coordonnées
+      return {
+        fulfillmentText: "",
+        payload: {
+          flutter: {
+            type: 'activity_details',
+            category: category,
+            data: {
+              activity: itemData,
+              activityType: category,
+              onlyImages: true
+            }
+          }
+        }
+      };
+    } catch (error) {
+      console.error(`❌ Error fetching activity details:`, error);
+      return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${activityName}".` };
+    }
+  }
+
   static async handleItemDetails(sessionId, itemName, itemType) {
     if (!itemName) {
       return { fulfillmentText: `Please tell me which ${itemType} you'd like to know more about.` };
@@ -308,14 +350,7 @@ class ContentHandler {
 
     try {
       console.log(`🔍 Fetching details for ${itemType}: ${itemName}`);
-      
-      let response;
-      // Use specific endpoint for activities
-      if (itemType === 'activity') {
-        response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(itemName)}`);
-      } else {
-        response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
-      }
+      const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
 
       if (!response.data?.length) {
         return { fulfillmentText: `I couldn't find detailed information about "${itemName}". Please check the spelling.` };
@@ -331,9 +366,6 @@ class ContentHandler {
       } else if (itemType === 'amenity') {
         isCorrectType = TypeDetector.isAmenity(itemData);
         category = TypeDetector.determineAmenityType(itemData);
-      } else if (itemType === 'activity') {
-        isCorrectType = TypeDetector.isActivity(itemData);
-        category = TypeDetector.determineActivityType(itemData);
       }
       
       if (!isCorrectType) {
@@ -462,8 +494,7 @@ const IntentHandlers = {
   handleSportiveActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.sportive, 'sportive', sessionId, 'activities'),
   handleCulturalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.cultural, 'cultural', sessionId, 'activities'),
   handleAdventureActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.adventure, 'adventure', sessionId, 'activities'),
-  handleActivitiesByCity: (sessionId, cityName) => ContentHandler.handleContentByCity(sessionId, cityName, 'activities'),
-  handleActivityDetails: (sessionId, activityName) => ContentHandler.handleItemDetails(sessionId, activityName, 'activity'),
+  handleActivityDetails: (sessionId, activityName) => ContentHandler.handleActivityDetails(sessionId, activityName),
 
   // Shared handlers
   async handleShowMore(sessionId) {
@@ -510,40 +541,15 @@ const IntentHandlers = {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
-      const itemData = sessionData.attractionData || sessionData.amenityData || sessionData.activityData;
-      let itemType = 'attraction';
-      if (sessionData.amenityData) itemType = 'amenity';
-      if (sessionData.activityData) itemType = 'activity';
+      const itemData = sessionData.attractionData || sessionData.amenityData;
+      let itemType = sessionData.attractionData ? 'attraction' : 'amenity';
       
       if (!itemData) {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
-      const latitude = itemData.latitude || 0;
-      const longitude = itemData.longitude || 0;
-      const name = itemData.name;
-      
-      if (latitude === 0 && longitude === 0 && itemData.cityOfTheActivity) {
-        const googleMapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(name)}+${encodeURIComponent(itemData.cityOfTheActivity)}`;
-        
-        SessionManager.delete(sessionId);
-
-        return {
-          fulfillmentText: `Here you can find ${name} on the map: `,
-          payload: {
-            flutter: {
-              type: 'map_location',
-              data: {
-                [itemType]: itemData,
-                coordinates: { latitude: 0, longitude: 0 },
-                googleMapsUrl: googleMapsUrl
-              }
-            }
-          }
-        };
-      }
-
-      const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}&query_place_id=&query=${encodeURIComponent(name)}`;
+      const { latitude: lat, longitude: lng, name } = itemData;
+      const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
       
       SessionManager.delete(sessionId);
 
@@ -554,7 +560,7 @@ const IntentHandlers = {
             type: 'map_location',
             data: {
               [itemType]: itemData,
-              coordinates: { latitude: latitude, longitude: longitude },
+              coordinates: { latitude: lat, longitude: lng },
               googleMapsUrl: googleMapsUrl
             }
           }
@@ -641,7 +647,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Cultural_Attractions': () => IntentHandlers.handleCulturalAttractions(sessionId),
       'Ask_Historical_Attractions': () => IntentHandlers.handleHistoricalAttractions(sessionId),
       'Ask_Artificial_Attractions': () => IntentHandlers.handleArtificialAttractions(sessionId),
-      'Ask_Attractions_By_City': () => IntentHandlers.handleAttractionsByCity(sessionId, parameters.city || parameters['geo-city'] || parameters.name),
+      'Ask_Attractions_By_City': () => IntentHandlers.handleAttractionsByCity(sessionId, parameters.city_names || parameters.city || parameters['geo-city'] || parameters.name),
       'Ask_Attraction_Details': () => IntentHandlers.handleAttractionDetails(sessionId, parameters['attraction-name'] || parameters.name),
 
       // Amenity intents
@@ -652,7 +658,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_GuestHouses': () => IntentHandlers.handleGuestHouses(sessionId),
       'Ask_Camping': () => IntentHandlers.handleCamping(sessionId),
       'Ask_Cafes': () => IntentHandlers.handleCafes(sessionId),
-      'Ask_Amenities_By_City': () => IntentHandlers.handleAmenitiesByCity(sessionId, parameters.city || parameters['geo-city'] || parameters.name),
+      'Ask_Amenities_By_City': () => IntentHandlers.handleAmenitiesByCity(sessionId, parameters.city_names || parameters.city || parameters['geo-city'] || parameters.name),
       'Ask_Amenity_Details': () => IntentHandlers.handleAmenityDetails(sessionId, parameters['amenity-name'] || parameters.name),
 
       // Activity intents
@@ -661,7 +667,6 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
-      'Ask_Activities_By_City': () => IntentHandlers.handleActivitiesByCity(sessionId, parameters.city_names || parameters.city || parameters['geo-city'] || parameters.name),
       'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name),
 
       // Shared intents
