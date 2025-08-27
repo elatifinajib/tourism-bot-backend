@@ -661,7 +661,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
-      'Ask_Activities_By_City': () => IntentHandlers.handleActivitiesByCity(sessionId, parameters.city || parameters['geo-city'] || parameters.name),
+      'Ask_Activities_By_City': () => IntentHandlers.handleActivitiesByCity(sessionId, parameters.city_names || parameters.city || parameters['geo-city'] || parameters.name),
       'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name),
 
       // Shared intents
