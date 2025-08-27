@@ -462,6 +462,8 @@ const IntentHandlers = {
   handleSportiveActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.sportive, 'sportive', sessionId, 'activities'),
   handleCulturalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.cultural, 'cultural', sessionId, 'activities'),
   handleAdventureActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.adventure, 'adventure', sessionId, 'activities'),
+  handleActivitiesByCity: (sessionId, cityName) => ContentHandler.handleContentByCity(sessionId, cityName, 'activities'),
+  handleActivityDetails: (sessionId, activityName) => ContentHandler.handleItemDetails(sessionId, activityName, 'activity'),
 
   // Shared handlers
   async handleShowMore(sessionId) {
@@ -659,6 +661,8 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
+      'Ask_Activities_By_City': () => IntentHandlers.handleActivitiesByCity(sessionId, parameters.city || parameters['geo-city'] || parameters.name),
+      'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name),
 
       // Shared intents
       'Pagination_ShowMore': () => IntentHandlers.handleShowMore(sessionId),
