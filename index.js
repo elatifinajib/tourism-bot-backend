@@ -103,7 +103,7 @@ class ApiService {
         const response = await this.makeCall(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`);
         if (response.data?.length > 0) {
           const newResults = response.data.filter(newItem => 
-            !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
+            !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location || existingItem.id_Activity === newItem.id_Activity)
           );
           allResults = [...allResults, ...newResults];
         }
@@ -147,6 +147,10 @@ class TypeDetector {
 
   static isAmenity(item) {
     return item.hasOwnProperty('price') && item.hasOwnProperty('openingHours') && item.hasOwnProperty('available');
+  }
+
+  static isActivity(item) {
+    return item.hasOwnProperty('id_Activity') && item.hasOwnProperty('duration') && item.hasOwnProperty('ageLimit');
   }
 
   static determineAttractionType(data) {
@@ -195,6 +199,26 @@ class TypeDetector {
     }
     return 'amenity';
   }
+
+  static determineActivityType(data) {
+    if (data.hasOwnProperty('craftType')) return 'traditional';
+    if (data.hasOwnProperty('typeSport')) return 'sportive';
+    if (data.hasOwnProperty('traditionAssociated')) return 'cultural';
+    if (data.hasOwnProperty('terrainType') && data.hasOwnProperty('ageRestriction')) return 'adventure';
+
+    const text = `${data.name || ''} ${data.description || ''}`.toLowerCase();
+    const patterns = {
+      traditional: ['craft', 'pottery', 'weaving', 'traditional'],
+      sportive: ['climb', 'sport', 'bike', 'hiking'],
+      cultural: ['music', 'dance', 'festival', 'cultural'],
+      adventure: ['desert', '4x4', 'adventure', 'extreme']
+    };
+
+    for (const [type, keywords] of Object.entries(patterns)) {
+      if (keywords.some(keyword => text.includes(keyword))) return type;
+    }
+    return 'adventure';
+  }
 }
 
 // ============================
@@ -217,6 +241,13 @@ const API_ENDPOINTS = {
     guesthouses: '/api/public/GuestHouses',
     camping: '/api/public/Camping',
     cafes: '/api/public/Cafes'
+  },
+  activities: {
+    all: '/api/public/getAll/Activities',
+    traditional: '/api/public/Activity/Traditional',
+    sportive: '/api/public/Activity/Sportive',
+    cultural: '/api/public/Activity/Cultural',
+    adventure: '/api/public/Activity/Adventure'
   }
 };
 
@@ -249,9 +280,14 @@ class ContentHandler {
         return { fulfillmentText: `I couldn't find ${contentType} information about "${cityName}". Try another city.` };
       }
 
-      const items = cityResult.data.filter(location => 
-        contentType === 'attractions' ? TypeDetector.isAttraction(location) : TypeDetector.isAmenity(location)
-      );
+      let items;
+      if (contentType === 'attractions') {
+        items = cityResult.data.filter(location => TypeDetector.isAttraction(location));
+      } else if (contentType === 'amenities') {
+        items = cityResult.data.filter(location => TypeDetector.isAmenity(location));
+      } else if (contentType === 'activities') {
+        items = cityResult.data.filter(location => TypeDetector.isActivity(location));
+      }
 
       if (!items?.length) {
         return { fulfillmentText: `No ${contentType} found in ${cityName}.` };
@@ -279,16 +315,23 @@ class ContentHandler {
       }
 
       const itemData = response.data[0];
-      const isCorrectType = itemType === 'attraction' ? TypeDetector.isAttraction(itemData) : TypeDetector.isAmenity(itemData);
-      
-      if (!isCorrectType) {
-        const alternativeType = itemType === 'attraction' ? 'amenity' : 'attraction';
-        return { fulfillmentText: `"${itemName}" appears to be an ${alternativeType}, not an ${itemType}.` };
+      let isCorrectType = false;
+      let category = '';
+
+      if (itemType === 'attraction') {
+        isCorrectType = TypeDetector.isAttraction(itemData);
+        category = TypeDetector.determineAttractionType(itemData);
+      } else if (itemType === 'amenity') {
+        isCorrectType = TypeDetector.isAmenity(itemData);
+        category = TypeDetector.determineAmenityType(itemData);
+      } else if (itemType === 'activity') {
+        isCorrectType = TypeDetector.isActivity(itemData);
+        category = TypeDetector.determineActivityType(itemData);
       }
       
-      const category = itemType === 'attraction' 
-        ? TypeDetector.determineAttractionType(itemData)
-        : TypeDetector.determineAmenityType(itemData);
+      if (!isCorrectType) {
+        return { fulfillmentText: `"${itemName}" doesn't appear to be an ${itemType}.` };
+      }
       
       console.log(`✅ Found ${itemType} (${category}): ${itemData.name}`);
 
@@ -339,7 +382,7 @@ class ContentHandler {
         fulfillmentText: getDisplayMessage(totalCount, true),
         payload: {
           flutter: {
-            type: contentType === 'attractions' ? 'attractions_list' : 'amenities_list',
+            type: contentType === 'attractions' ? 'attractions_list' : contentType === 'amenities' ? 'amenities_list' : 'activities_list',
             category: category,
             data: { [contentType]: allItems, count: totalCount, cityName: cityName },
             actions: getActions()
@@ -363,7 +406,7 @@ class ContentHandler {
       fulfillmentText: getDisplayMessage(totalCount, true).replace('!', `. Here are the first ${ITEMS_PER_PAGE}:`),
       payload: {
         flutter: {
-          type: contentType === 'attractions' ? 'attractions_list_with_more' : 'amenities_list_with_more',
+          type: contentType === 'attractions' ? 'attractions_list_with_more' : contentType === 'amenities' ? 'amenities_list_with_more' : 'activities_list_with_more',
           category: category,
           data: {
             [contentType]: firstPageItems,
@@ -406,6 +449,13 @@ const IntentHandlers = {
   handleAmenitiesByCity: (sessionId, cityName) => ContentHandler.handleContentByCity(sessionId, cityName, 'amenities'),
   handleAmenityDetails: (sessionId, amenityName) => ContentHandler.handleItemDetails(sessionId, amenityName, 'amenity'),
 
+  // Activity handlers
+  handleAllActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.all, 'all_activities', sessionId, 'activities'),
+  handleTraditionalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.traditional, 'traditional', sessionId, 'activities'),
+  handleSportiveActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.sportive, 'sportive', sessionId, 'activities'),
+  handleCulturalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.cultural, 'cultural', sessionId, 'activities'),
+  handleAdventureActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.adventure, 'adventure', sessionId, 'activities'),
+
   // Shared handlers
   async handleShowMore(sessionId) {
     const sessionData = SessionManager.get(sessionId);
@@ -425,7 +475,7 @@ const IntentHandlers = {
       fulfillmentText: naturalResponse,
       payload: {
         flutter: {
-          type: contentType === 'attractions' ? 'attractions_list' : 'amenities_list',
+          type: contentType === 'attractions' ? 'attractions_list' : contentType === 'amenities' ? 'amenities_list' : 'activities_list',
           category: category,
           data: { [contentType]: remainingItems, count: remainingItems.length, cityName: cityName },
           actions: [
@@ -451,15 +501,40 @@ const IntentHandlers = {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
-      const itemData = sessionData.attractionData || sessionData.amenityData;
-      const itemType = sessionData.attractionData ? 'attraction' : 'amenity';
+      const itemData = sessionData.attractionData || sessionData.amenityData || sessionData.activityData;
+      let itemType = 'attraction';
+      if (sessionData.amenityData) itemType = 'amenity';
+      if (sessionData.activityData) itemType = 'activity';
       
       if (!itemData) {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
-      const { latitude: lat, longitude: lng, name } = itemData;
-      const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
+      const latitude = itemData.latitude || 0;
+      const longitude = itemData.longitude || 0;
+      const name = itemData.name;
+      
+      if (latitude === 0 && longitude === 0 && itemData.cityOfTheActivity) {
+        const googleMapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(name)}+${encodeURIComponent(itemData.cityOfTheActivity)}`;
+        
+        SessionManager.delete(sessionId);
+
+        return {
+          fulfillmentText: `Here you can find ${name} on the map: `,
+          payload: {
+            flutter: {
+              type: 'map_location',
+              data: {
+                [itemType]: itemData,
+                coordinates: { latitude: 0, longitude: 0 },
+                googleMapsUrl: googleMapsUrl
+              }
+            }
+          }
+        };
+      }
+
+      const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}&query_place_id=&query=${encodeURIComponent(name)}`;
       
       SessionManager.delete(sessionId);
 
@@ -470,7 +545,7 @@ const IntentHandlers = {
             type: 'map_location',
             data: {
               [itemType]: itemData,
-              coordinates: { latitude: lat, longitude: lng },
+              coordinates: { latitude: latitude, longitude: longitude },
               googleMapsUrl: googleMapsUrl
             }
           }
@@ -571,6 +646,13 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Amenities_By_City': () => IntentHandlers.handleAmenitiesByCity(sessionId, parameters.city || parameters['geo-city'] || parameters.name),
       'Ask_Amenity_Details': () => IntentHandlers.handleAmenityDetails(sessionId, parameters['amenity-name'] || parameters.name),
 
+      // Activity intents
+      'Ask_All_Activities': () => IntentHandlers.handleAllActivities(sessionId),
+      'Ask_Traditional_Activities': () => IntentHandlers.handleTraditionalActivities(sessionId),
+      'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
+      'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
+      'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
+
       // Shared intents
       'Pagination_ShowMore': () => IntentHandlers.handleShowMore(sessionId),
       'Pagination_Decline': () => IntentHandlers.handleDecline(sessionId),
@@ -578,13 +660,13 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Map_Request_Yes': () => IntentHandlers.handleShowItemOnMap(sessionId),
       'Map_Request_No': () => IntentHandlers.handleMapDecline(sessionId),
       'Default Welcome Intent': () => ({
-        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, restaurants, hotels, lodges, guest houses, camping sites, cafes and more."
+        fulfillmentText: "Welcome to Draa-Tafilalet Tourism Assistant! I can help you discover attractions, restaurants, hotels, lodges, guest houses, camping sites, cafes, activities and more."
       })
     };
 
     const handler = intentMap[intentName];
     return handler ? await handler() : {
-      fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, restaurants, hotels, or other services.`
+      fulfillmentText: `I understand you're asking about "${intentName}", but I'm not sure how to help with that. Try asking about attractions, restaurants, hotels, activities, or other services.`
     };
   } catch (error) {
     console.error(`❌ Error processing intent ${intentName}:`, error);
