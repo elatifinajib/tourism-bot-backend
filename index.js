@@ -645,47 +645,32 @@ const IntentHandlers = {
       const { latitude: lat, longitude: lng, name } = itemData;
       const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
       
-      // MODIFIER: Garder la session pour les attractions et proposer les activités
+      // MODIFIER: Garder la session pour les attractions mais ne pas ajouter le message ici
       if (itemType === 'attraction') {
         SessionManager.save(sessionId, {
           ...sessionData,
           waitingForMapResponse: false,
           waitingForActivitiesAroundRequest: true
         });
-        
-        const baseMessage = `Here you can find ${name} on the map: `;
-        const additionalMessage = `\n\nWould you like to discover activities around ${name}?`;
-
-        return {
-          fulfillmentText: baseMessage + additionalMessage,
-          payload: {
-            flutter: {
-              type: 'map_location',
-              data: {
-                [itemType]: itemData,
-                coordinates: { latitude: lat, longitude: lng },
-                googleMapsUrl: googleMapsUrl
-              }
-            }
-          }
-        };
       } else {
-        // Pour les amenities, pas d'activités proposées
         SessionManager.delete(sessionId);
-        return {
-          fulfillmentText: `Here you can find ${name} on the map: `,
-          payload: {
-            flutter: {
-              type: 'map_location',
-              data: {
-                [itemType]: itemData,
-                coordinates: { latitude: lat, longitude: lng },
-                googleMapsUrl: googleMapsUrl
-              }
+      }
+
+      // Ne pas ajouter le message d'activités ici - il sera ajouté dans Flutter après l'affichage de la carte
+      return {
+        fulfillmentText: `Here you can find ${name} on the map: `,
+        payload: {
+          flutter: {
+            type: 'map_location',
+            data: {
+              [itemType]: itemData,
+              coordinates: { latitude: lat, longitude: lng },
+              googleMapsUrl: googleMapsUrl,
+              isAttraction: itemType === 'attraction' // NOUVEAU: indiquer que c'est une attraction
             }
           }
-        };
-      }
+        }
+      };
     } catch (error) {
       return { fulfillmentText: "Sorry, I couldn't retrieve the location information right now." };
     }
