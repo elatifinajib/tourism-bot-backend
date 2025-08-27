@@ -319,41 +319,12 @@ class ContentHandler {
       return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${itemName}".` };
     }
   }
-  static getSpecificContentName(category, contentType) {
-  if (contentType === 'attractions') {
-    const attractionNames = {
-      'all': 'attractions',
-      'natural': 'natural attractions',
-      'cultural': 'cultural attractions', 
-      'historical': 'historical attractions',
-      'artificial': 'artificial attractions'
-    };
-    return attractionNames[category] || 'attractions';
-  }
-  
-  if (contentType === 'amenities') {
-    const amenityNames = {
-      'all_amenities': 'amenities',
-      'restaurants': 'restaurants',
-      'hotels': 'hotels',
-      'lodges': 'lodges', 
-      'guesthouses': 'guest houses',
-      'camping': 'camping sites',
-      'cafes': 'cafes'
-    };
-    return amenityNames[category] || 'amenities';
-  }
-  
-  return contentType;
-}
+
   static createPaginationResponse(allItems, category, sessionId, cityName = null, contentType = 'attractions') {
     const totalCount = allItems.length;
     
     const getDisplayMessage = (count, isFirst = false) => {
       const prefix = isFirst ? `I found ${count}` : `Here are all the remaining`;
-      if (cityName) {
-      return `${prefix} ${this.getSpecificContentName(category, contentType)} in ${cityName}!`;
-      }
       return cityName ? `${prefix} ${contentType} in ${cityName}!` : `${prefix} ${contentType}!`;
     };
     
@@ -409,8 +380,6 @@ class ContentHandler {
     };
   }
 }
-
-
 
 // ============================
 // INTENT HANDLERS
