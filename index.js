@@ -306,14 +306,24 @@ class ContentHandler {
 
     try {
       console.log(`🔍 Fetching details for activity: ${activityName}`);
-      const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(activityName)}`);
+      const url = `${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(activityName)}`;
+      console.log(`📡 Calling URL: ${url}`);
+      
+      const response = await ApiService.makeCall(url);
+      
+      console.log(`📊 Response status: ${response.status}`);
+      console.log(`📊 Response data length: ${response.data?.length || 0}`);
+      console.log(`📊 Response data:`, JSON.stringify(response.data, null, 2));
 
       if (!response.data?.length) {
         return { fulfillmentText: `I couldn't find detailed information about "${activityName}". Please check the spelling.` };
       }
 
       const itemData = response.data[0];
+      console.log(`📊 First item data:`, JSON.stringify(itemData, null, 2));
+      
       const isCorrectType = TypeDetector.isActivity(itemData);
+      console.log(`📊 Is activity type: ${isCorrectType}`);
       
       if (!isCorrectType) {
         return { fulfillmentText: `"${activityName}" doesn't appear to be an activity.` };
@@ -339,6 +349,7 @@ class ContentHandler {
       };
     } catch (error) {
       console.error(`❌ Error fetching activity details:`, error);
+      console.error(`❌ Error details:`, error.response?.data || error.message);
       return { fulfillmentText: `Sorry, I'm having trouble retrieving details about "${activityName}".` };
     }
   }
@@ -638,6 +649,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
   const parameters = queryResult.parameters || {};
   
   console.log(`🎯 Processing intent: ${intentName}`);
+  console.log(`📊 All parameters:`, JSON.stringify(parameters, null, 2));
   
   try {
     const intentMap = {
@@ -667,7 +679,7 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
-      'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name),
+      'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']),
 
       // Shared intents
       'Pagination_ShowMore': () => IntentHandlers.handleShowMore(sessionId),
