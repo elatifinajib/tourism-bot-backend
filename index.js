@@ -697,24 +697,24 @@ const IntentHandlers = {
   },
 
   async handleActivitiesAroundAttraction(sessionId) {
-    try {
-      const sessionData = SessionManager.get(sessionId);
-      
-      if (!sessionData?.attractionData) {
-        return { fulfillmentText: "I don't have attraction information available. Please ask about a specific attraction first." };
-      }
-
-      const attractionName = sessionData.attractionData.name;
-      
-      // Nettoyer la session avant d'appeler les activités par location
-      SessionManager.delete(sessionId);
-      
-      // Utiliser le handler existant pour les activités par location
-      return IntentHandlers.handleActivitiesByLocation(sessionId, attractionName);
-    } catch (error) {
-      return { fulfillmentText: "Sorry, I couldn't retrieve activities around this attraction right now." };
+  try {
+    const sessionData = SessionManager.get(sessionId);
+    
+    if (!sessionData?.attractionData) {
+      return { fulfillmentText: "I don't have attraction information available. Please ask about a specific attraction first." };
     }
+
+    const attractionName = sessionData.attractionData.name;
+    
+    // Utiliser directement handleActivitiesByLocation qui gère automatiquement
+    // la sauvegarde des activités en session pour permettre les détails
+    return ContentHandler.handleActivitiesByLocation(sessionId, attractionName);
+    
+  } catch (error) {
+    console.error(`❌ Error getting activities around attraction:`, error);
+    return { fulfillmentText: "Sorry, I couldn't retrieve activities around this attraction right now." };
   }
+}
 };
 
 // ============================
