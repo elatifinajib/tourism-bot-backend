@@ -29,10 +29,10 @@ let tokenExpiry = null;
 async function initializeGoogleAuth() {
   try {
     console.log('🔑 Initializing Google Auth...');
-
+    
     const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
     const credentialsFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-
+    
     if (credentialsJson || credentialsFile) {
       const { GoogleAuth } = require('google-auth-library');
       googleAuth = new GoogleAuth({
@@ -63,7 +63,7 @@ async function getGoogleAccessToken() {
     tokenExpiry = tokenResponse.expiry_date;
     return tokenResponse.token;
   }
-
+  
   throw new Error('Failed to obtain access token');
 }
 
@@ -77,7 +77,7 @@ class ApiService {
       try {
         return await axios.get(url, {
           timeout: 30000,
-          headers: {
+          headers: { 
             'Content-Type': 'application/json',
             'User-Agent': 'Tourism-Bot/1.0'
           }
@@ -102,7 +102,7 @@ class ApiService {
       try {
         const response = await this.makeCall(`${API_BASE_URL}/api/public/getLocationByCity/${encodeURIComponent(variant)}`);
         if (response.data?.length > 0) {
-          const newResults = response.data.filter(newItem =>
+          const newResults = response.data.filter(newItem => 
             !allResults.some(existingItem => existingItem.id_Location === newItem.id_Location)
           );
           allResults = [...allResults, ...newResults];
@@ -307,25 +307,25 @@ class ContentHandler {
 
     try {
       const response = await ApiService.makeCall(`${API_BASE_URL}${API_ENDPOINTS.activities.byLocation}/${encodeURIComponent(locationName)}`);
-
+      
       if (!response.data?.length) {
         return { fulfillmentText: `I couldn't find activities at "${locationName}". Try another location.` };
       }
 
       const activities = response.data;
       const formattedLocationName = locationName.charAt(0).toUpperCase() + locationName.slice(1).toLowerCase();
-
+      
       // Sauvegarder les activités dans la session pour permettre les détails
       SessionManager.save(sessionId, {
         locationActivities: activities,
         locationName: formattedLocationName,
         waitingForActivityDetailsRequest: true
       });
-
+      
       const result = this.createPaginationResponse(activities, `location_activities_${locationName.toLowerCase()}`, sessionId, formattedLocationName, 'activities');
-
+      
       // NE PAS modifier le fulfillmentText ici - laisser le message original du carousel
-
+      
       return result;
     } catch (error) {
       console.error(`❌ Error finding activities at ${locationName}:`, error);
@@ -340,22 +340,22 @@ class ContentHandler {
 
     try {
       const sessionData = SessionManager.get(sessionId);
-
+      
       if (!sessionData?.locationActivities || !sessionData.waitingForActivityDetailsRequest) {
         // Fallback to normal activity details if no session context
         return this.handleActivityDetails(sessionId, activityName);
       }
 
       // Chercher l'activité dans la liste des activités de cette location
-      const foundActivity = sessionData.locationActivities.find(activity =>
+      const foundActivity = sessionData.locationActivities.find(activity => 
         activity.name.toLowerCase().includes(activityName.toLowerCase()) ||
         activityName.toLowerCase().includes(activity.name.toLowerCase())
       );
 
       if (!foundActivity) {
         const activityNames = sessionData.locationActivities.map(a => a.name).join(', ');
-        return {
-          fulfillmentText: `I couldn't find "${activityName}" in the activities at ${sessionData.locationName}. Available activities are: ${activityNames}. Please specify the exact name.`
+        return { 
+          fulfillmentText: `I couldn't find "${activityName}" in the activities at ${sessionData.locationName}. Available activities are: ${activityNames}. Please specify the exact name.` 
         };
       }
 
@@ -392,20 +392,20 @@ class ContentHandler {
     try {
       const url = `${API_BASE_URL}/api/public/getActivityByName/${encodeURIComponent(activityName)}`;
       const response = await ApiService.makeCall(url);
-
+      
       if (!response.data || Object.keys(response.data).length === 0) {
         return { fulfillmentText: `I couldn't find detailed information about "${activityName}". Please check the spelling.` };
       }
 
       const itemData = response.data;
       console.log(`📊 Item data:`, JSON.stringify(itemData, null, 2));
-
+      
       const isCorrectType = TypeDetector.isActivity(itemData);
-
+      
       if (!isCorrectType) {
         return { fulfillmentText: `"${activityName}" doesn't appear to be an activity.` };
       }
-
+      
       const category = TypeDetector.determineActivityType(itemData);
 
       return {
@@ -450,7 +450,7 @@ class ContentHandler {
         isCorrectType = TypeDetector.isAmenity(itemData);
         category = TypeDetector.determineAmenityType(itemData);
       }
-
+      
       if (!isCorrectType) {
         return { fulfillmentText: `"${itemName}" doesn't appear to be an ${itemType}.` };
       }
@@ -485,7 +485,7 @@ class ContentHandler {
 
   static createPaginationResponse(allItems, category, sessionId, cityName = null, contentType = 'attractions') {
     const totalCount = allItems.length;
-
+    
     const getDisplayMessage = (count, isFirst = false) => {
       const prefix = isFirst ? `I found ${count}` : `Here are all the remaining`;
       if (cityName && contentType === 'activities') {
@@ -495,13 +495,13 @@ class ContentHandler {
       }
       return `${prefix} ${contentType}!`;
     };
-
+    
     const getActions = () => [
       { type: 'view_details', label: 'View Details', icon: 'info' },
       { type: 'get_directions', label: 'Get Directions', icon: 'directions' },
       { type: 'add_favorite', label: 'Add to Favorites', icon: 'favorite_border' }
     ];
-
+    
     if (totalCount <= ITEMS_PER_PAGE) {
       return {
         fulfillmentText: getDisplayMessage(totalCount, true),
@@ -518,7 +518,7 @@ class ContentHandler {
 
     const firstPageItems = allItems.slice(0, ITEMS_PER_PAGE);
     const remainingItems = allItems.slice(ITEMS_PER_PAGE);
-
+    
     SessionManager.save(sessionId, {
       remainingItems,
       category,
@@ -588,7 +588,7 @@ const IntentHandlers = {
   // Shared handlers
   async handleShowMore(sessionId) {
     const sessionData = SessionManager.get(sessionId);
-
+    
     if (!sessionData?.remainingItems?.length) {
       return { fulfillmentText: "I don't have any additional items to show right now." };
     }
@@ -630,47 +630,62 @@ const IntentHandlers = {
   async handleShowItemOnMap(sessionId) {
     try {
       const sessionData = SessionManager.get(sessionId);
-
+      
       if (!sessionData) {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
       const itemData = sessionData.attractionData || sessionData.amenityData;
       let itemType = sessionData.attractionData ? 'attraction' : 'amenity';
-
+      
       if (!itemData) {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
       const { latitude: lat, longitude: lng, name } = itemData;
       const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
-
-      // MODIFIER: Garder la session pour les attractions mais ne pas ajouter le message ici
+      
+      // MODIFIER: Garder la session pour les attractions et proposer les activités
       if (itemType === 'attraction') {
         SessionManager.save(sessionId, {
           ...sessionData,
           waitingForMapResponse: false,
           waitingForActivitiesAroundRequest: true
         });
-      } else {
-        SessionManager.delete(sessionId);
-      }
+        
+        const baseMessage = `Here you can find ${name} on the map: `;
+        const additionalMessage = `\n\nWould you like to discover activities around ${name}?`;
 
-      // Ne pas ajouter le message d'activités ici - il sera ajouté dans Flutter après l'affichage de la carte
-      return {
-        fulfillmentText: `Here you can find ${name} on the map: `,
-        payload: {
-          flutter: {
-            type: 'map_location',
-            data: {
-              [itemType]: itemData,
-              coordinates: { latitude: lat, longitude: lng },
-              googleMapsUrl: googleMapsUrl,
-              isAttraction: itemType === 'attraction' // NOUVEAU: indiquer que c'est une attraction
+        return {
+          fulfillmentText: baseMessage + additionalMessage,
+          payload: {
+            flutter: {
+              type: 'map_location',
+              data: {
+                [itemType]: itemData,
+                coordinates: { latitude: lat, longitude: lng },
+                googleMapsUrl: googleMapsUrl
+              }
             }
           }
-        }
-      };
+        };
+      } else {
+        // Pour les amenities, pas d'activités proposées
+        SessionManager.delete(sessionId);
+        return {
+          fulfillmentText: `Here you can find ${name} on the map: `,
+          payload: {
+            flutter: {
+              type: 'map_location',
+              data: {
+                [itemType]: itemData,
+                coordinates: { latitude: lat, longitude: lng },
+                googleMapsUrl: googleMapsUrl
+              }
+            }
+          }
+        };
+      }
     } catch (error) {
       return { fulfillmentText: "Sorry, I couldn't retrieve the location information right now." };
     }
@@ -678,7 +693,7 @@ const IntentHandlers = {
 
   handleMapDecline(sessionId) {
     const sessionData = SessionManager.get(sessionId);
-
+    
     // Vérifier s'il faut proposer les activités autour de l'attraction
     if (sessionData?.attractionData) {
       const attractionName = sessionData.attractionData.name;
@@ -688,10 +703,10 @@ const IntentHandlers = {
         waitingForMapResponse: false,
         waitingForActivitiesAroundRequest: true
       });
-
+      
       return { fulfillmentText: `No problem! Would you like to discover activities around ${attractionName}?` };
     }
-
+    
     SessionManager.delete(sessionId);
     return { fulfillmentText: "No problem! Is there anything else you'd like to know about this place or would you like to explore other locations?" };
   },
@@ -699,19 +714,19 @@ const IntentHandlers = {
   async handleActivitiesAroundAttraction(sessionId) {
     try {
       const sessionData = SessionManager.get(sessionId);
-
+      
       if (!sessionData?.attractionData) {
         return { fulfillmentText: "I don't have attraction information available. Please ask about a specific attraction first." };
       }
 
       const attractionName = sessionData.attractionData.name;
-
-      // Utiliser directement handleActivitiesByLocation qui gère automatiquement
-      // la sauvegarde des activités en session pour permettre les détails
-      return ContentHandler.handleActivitiesByLocation(sessionId, attractionName);
-
+      
+      // Nettoyer la session avant d'appeler les activités par location
+      SessionManager.delete(sessionId);
+      
+      // Utiliser le handler existant pour les activités par location
+      return IntentHandlers.handleActivitiesByLocation(sessionId, attractionName);
     } catch (error) {
-      console.error(`❌ Error getting activities around attraction:`, error);
       return { fulfillmentText: "Sorry, I couldn't retrieve activities around this attraction right now." };
     }
   }
@@ -734,7 +749,7 @@ app.post('/dialogflow-proxy', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     console.log(`🔄 Processing: "${message}" (session: ${sessionId})`);
-
+    
     if (googleAuth) {
       const token = await getGoogleAccessToken();
       const sessionPath = `projects/${PROJECT_ID}/agent/sessions/${sessionId}`;
@@ -757,11 +772,11 @@ app.post('/dialogflow-proxy', async (req, res) => {
       const queryResult = dialogflowResponse.data.queryResult;
       const response = await processDialogflowResponse(queryResult, sessionId);
       return res.json(response);
-
+      
     } else {
       return res.status(500).json({ fulfillmentText: "Dialogflow service unavailable" });
     }
-
+    
   } catch (error) {
     console.error('❌ Proxy error:', error);
     res.status(500).json({ fulfillmentText: "Sorry, I'm experiencing technical difficulties." });
@@ -775,10 +790,10 @@ app.post('/dialogflow-proxy', async (req, res) => {
 async function processDialogflowResponse(queryResult, sessionId) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
-
+  
   console.log(`🎯 Processing intent: ${intentName}`);
   console.log(`📊 All parameters:`, JSON.stringify(parameters, null, 2));
-
+  
   try {
     const intentMap = {
       // Attraction intents
@@ -809,14 +824,9 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
       'Ask_Activity_Details': () => {
         const sessionData = SessionManager.get(sessionId);
-        console.log('🔍 Session data for activity details:', JSON.stringify(sessionData, null, 2));
-        console.log('🔍 Parameters:', JSON.stringify(parameters, null, 2));
-
         if (sessionData?.waitingForActivityDetailsRequest) {
-          console.log('✅ Using handleActivityDetailsFromLocation');
           return IntentHandlers.handleActivityDetailsFromLocation(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']);
         }
-        console.log('⚠️ Using normal handleActivityDetails');
         return IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name || parameters['$activity-name']);
       },
       'Ask_Activities_By_Location': () => IntentHandlers.handleActivitiesByLocation(sessionId, parameters['attraction-name'] || parameters['amenity-name'] || parameters.name),
@@ -856,14 +866,14 @@ app.use((error, req, res, next) => {
 setInterval(() => {
   const now = Date.now();
   let cleanedCount = 0;
-
+  
   for (const [sessionId, data] of sessionStorage.entries()) {
     if (data.timestamp && (now - data.timestamp) > SESSION_TIMEOUT) {
       sessionStorage.delete(sessionId);
       cleanedCount++;
     }
   }
-
+  
   if (cleanedCount > 0) {
     console.log(`🧹 Cleaned ${cleanedCount} expired sessions`);
   }
