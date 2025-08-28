@@ -876,8 +876,43 @@ async function processDialogflowResponse(queryResult, sessionId) {
   const intentName = queryResult.intent.displayName;
   const parameters = queryResult.parameters || {};
   const queryText = queryResult.queryText;
+
+   // DEBUG SPÉCIAL POUR ACTIVITY DETAILS
+  console.log('='.repeat(60));
+  console.log(`🔍 FULL DEBUG ANALYSIS`);
+  console.log(`Intent Name: ${intentName}`);
+  console.log(`Query Text: "${queryText}"`);
+  console.log(`Intent Confidence: ${queryResult.intentDetectionConfidence || 'N/A'}`);
+  console.log(`All Parameters:`, JSON.stringify(parameters, null, 2));
+  console.log(`Parameter Keys:`, Object.keys(parameters));
   
+  // Vérifier si c'est bien notre intent
+  if (intentName === 'Ask_Activity_Details') {
+    console.log('✅ Ask_Activity_Details INTENT TRIGGERED!');
+  } else {
+    console.log('❌ Intent is NOT Ask_Activity_Details');
+    console.log(`❌ Falling back to: ${intentName}`);
+  }
+  
+  // Vérifier les paramètres d'activité
+  const possibleActivityNames = [
+    parameters['activity-name'],
+    parameters.name,
+    parameters['$activity-name'],
+    parameters.any
+  ];
+  
+  console.log('🔍 Activity name extraction attempts:');
+  possibleActivityNames.forEach((name, index) => {
+    const paramNames = ['activity-name', 'name', '$activity-name', 'any'];
+    console.log(`  ${paramNames[index]}: "${name || 'undefined'}"`);
+  });
+  
+  console.log('='.repeat(60));
+
   // AMÉLIORATION: Logs de debug détaillés
+
+
   console.log(`🎯 Processing intent: ${intentName}`);
   console.log(`💬 Query text: "${queryText}"`);
   console.log(`📊 All parameters:`, JSON.stringify(parameters, null, 2));
