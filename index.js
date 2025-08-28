@@ -118,55 +118,6 @@ class ApiService {
       totalFound: allResults.length
     };
   }
-
-  static async tryMultipleCityVariantsForActivities(cityName) {
-    const variants = [
-      cityName,
-      cityName.toLowerCase(),
-      cityName.charAt(0).toUpperCase() + cityName.slice(1).toLowerCase(),
-      cityName.toUpperCase(),
-    ];
-
-    let allResults = [];
-    for (const variant of [...new Set(variants)]) {
-      try {
-        const response = await this.makeCall(`${API_BASE_URL}/api/public/getAll/Activities`);
-        if (response.data?.length > 0) {
-          const filteredResults = response.data.filter(activity => 
-            activity.cityOfTheActivity?.toLowerCase().includes(variant.toLowerCase())
-          );
-          const newResults = filteredResults.filter(newItem => 
-            !allResults.some(existingItem => existingItem.id_Activity === newItem.id_Activity)
-          );
-          allResults = [...allResults, ...newResults];
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-
-    return {
-      success: allResults.length > 0,
-      data: allResults.length > 0 ? allResults : null,
-      totalFound: allResults.length
-    };
-  }
-
-  static async getActivityByName(activityName) {
-    try {
-      const response = await this.makeCall(`${API_BASE_URL}/api/public/getAll/Activities`);
-      if (response.data?.length > 0) {
-        const activity = response.data.find(act => 
-          act.name?.toLowerCase().includes(activityName.toLowerCase()) ||
-          activityName.toLowerCase().includes(act.name?.toLowerCase())
-        );
-        return activity ? { success: true, data: activity } : { success: false, data: null };
-      }
-      return { success: false, data: null };
-    } catch (error) {
-      return { success: false, data: null };
-    }
-  }
 }
 
 class SessionManager {
@@ -196,10 +147,6 @@ class TypeDetector {
 
   static isAmenity(item) {
     return item.hasOwnProperty('price') && item.hasOwnProperty('openingHours') && item.hasOwnProperty('available');
-  }
-
-  static isActivity(item) {
-    return item.hasOwnProperty('id_Activity') && item.hasOwnProperty('cityOfTheActivity') && item.hasOwnProperty('duration');
   }
 
   static determineAttractionType(data) {
@@ -247,26 +194,6 @@ class TypeDetector {
       if (words.some(word => text.includes(word))) return type;
     }
     return 'amenity';
-  }
-
-  static determineActivityType(data) {
-    if (data.hasOwnProperty('typeSport')) return 'sportive';
-    if (data.hasOwnProperty('terrainType') && data.hasOwnProperty('ageRestriction')) return 'adventure';
-    if (data.hasOwnProperty('traditionAssociated')) return 'cultural';
-    if (data.hasOwnProperty('craftType')) return 'traditional';
-    
-    const text = `${data.name || ''} ${data.description || ''}`.toLowerCase();
-    const patterns = {
-      adventure: ['desert', 'climbing', 'hiking', 'adventure', 'expedition'],
-      sportive: ['sport', 'climbing', 'football', 'tennis', 'swimming'],
-      cultural: ['cultural', 'festival', 'tradition', 'heritage', 'ceremony'],
-      traditional: ['craft', 'traditional', 'pottery', 'weaving', 'handicraft']
-    };
-
-    for (const [type, keywords] of Object.entries(patterns)) {
-      if (keywords.some(keyword => text.includes(keyword))) return type;
-    }
-    return 'general';
   }
 }
 
@@ -324,24 +251,16 @@ class ContentHandler {
     }
 
     try {
-      let items;
-      if (contentType === 'activities') {
-        const cityResult = await ApiService.tryMultipleCityVariantsForActivities(cityName);
-        if (!cityResult.success) {
-          return { fulfillmentText: `I couldn't find ${contentType} information about "${cityName}". Try another city.` };
-        }
-        items = cityResult.data;
-      } else {
-        const cityResult = await ApiService.tryMultipleCityVariants(cityName);
-        if (!cityResult.success) {
-          return { fulfillmentText: `I couldn't find ${contentType} information about "${cityName}". Try another city.` };
-        }
+      const cityResult = await ApiService.tryMultipleCityVariants(cityName);
+      if (!cityResult.success) {
+        return { fulfillmentText: `I couldn't find ${contentType} information about "${cityName}". Try another city.` };
+      }
 
-        if (contentType === 'attractions') {
-          items = cityResult.data.filter(location => TypeDetector.isAttraction(location));
-        } else if (contentType === 'amenities') {
-          items = cityResult.data.filter(location => TypeDetector.isAmenity(location));
-        }
+      let items;
+      if (contentType === 'attractions') {
+        items = cityResult.data.filter(location => TypeDetector.isAttraction(location));
+      } else if (contentType === 'amenities') {
+        items = cityResult.data.filter(location => TypeDetector.isAmenity(location));
       }
 
       if (!items?.length) {
@@ -362,34 +281,22 @@ class ContentHandler {
     }
 
     try {
-      let itemData = null;
+      const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
+
+      if (!response.data?.length) {
+        return { fulfillmentText: `I couldn't find detailed information about "${itemName}". Please check the spelling.` };
+      }
+
+      const itemData = response.data[0];
       let isCorrectType = false;
       let category = '';
 
-      if (itemType === 'activity') {
-        const activityResult = await ApiService.getActivityByName(itemName);
-        if (!activityResult.success) {
-          return { fulfillmentText: `I couldn't find detailed information about "${itemName}". Please check the spelling.` };
-        }
-        itemData = activityResult.data;
-        isCorrectType = TypeDetector.isActivity(itemData);
-        category = TypeDetector.determineActivityType(itemData);
-      } else {
-        const response = await ApiService.makeCall(`${API_BASE_URL}/api/public/getLocationByName/${encodeURIComponent(itemName)}`);
-        
-        if (!response.data?.length) {
-          return { fulfillmentText: `I couldn't find detailed information about "${itemName}". Please check the spelling.` };
-        }
-
-        itemData = response.data[0];
-
-        if (itemType === 'attraction') {
-          isCorrectType = TypeDetector.isAttraction(itemData);
-          category = TypeDetector.determineAttractionType(itemData);
-        } else if (itemType === 'amenity') {
-          isCorrectType = TypeDetector.isAmenity(itemData);
-          category = TypeDetector.determineAmenityType(itemData);
-        }
+      if (itemType === 'attraction') {
+        isCorrectType = TypeDetector.isAttraction(itemData);
+        category = TypeDetector.determineAttractionType(itemData);
+      } else if (itemType === 'amenity') {
+        isCorrectType = TypeDetector.isAmenity(itemData);
+        category = TypeDetector.determineAmenityType(itemData);
       }
       
       if (!isCorrectType) {
@@ -488,7 +395,7 @@ class ContentHandler {
 }
 
 // ============================
-// INTENT HANDLERS (AVEC ACTIVITÉS)
+// INTENT HANDLERS (AVEC ACTIVITÉS - 5 SEULEMENT)
 // ============================
 
 const IntentHandlers = {
@@ -512,14 +419,12 @@ const IntentHandlers = {
   handleAmenitiesByCity: (sessionId, cityName) => ContentHandler.handleContentByCity(sessionId, cityName, 'amenities'),
   handleAmenityDetails: (sessionId, amenityName) => ContentHandler.handleItemDetails(sessionId, amenityName, 'amenity'),
 
-  // Activity handlers
+  // Activity handlers - SEULEMENT 5 INTENTS
   handleAllActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.all, 'all_activities', sessionId, 'activities'),
   handleAdventureActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.adventure, 'adventure', sessionId, 'activities'),
   handleSportiveActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.sportive, 'sportive', sessionId, 'activities'),
   handleCulturalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.cultural, 'cultural', sessionId, 'activities'),
   handleTraditionalActivities: (sessionId) => ContentHandler.handleGenericContent(API_ENDPOINTS.activities.traditional, 'traditional', sessionId, 'activities'),
-  handleActivitiesByCity: (sessionId, cityName) => ContentHandler.handleContentByCity(sessionId, cityName, 'activities'),
-  handleActivityDetails: (sessionId, activityName) => ContentHandler.handleItemDetails(sessionId, activityName, 'activity'),
 
   // Shared handlers
   async handleShowMore(sessionId) {
@@ -569,28 +474,14 @@ const IntentHandlers = {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
-      const itemData = sessionData.attractionData || sessionData.amenityData || sessionData.activityData;
-      let itemType = sessionData.attractionData ? 'attraction' : sessionData.amenityData ? 'amenity' : 'activity';
+      const itemData = sessionData.attractionData || sessionData.amenityData;
+      let itemType = sessionData.attractionData ? 'attraction' : 'amenity';
       
       if (!itemData) {
         return { fulfillmentText: "I don't have location information available. Please ask about a specific place first." };
       }
 
-      let lat, lng, name;
-      if (itemType === 'activity') {
-        lat = itemData.latitude || 0;
-        lng = itemData.longitude || 0;
-        name = itemData.name;
-        
-        if (lat === 0 && lng === 0) {
-          return { fulfillmentText: `${name} doesn't have exact coordinates, but it's located in ${itemData.cityOfTheActivity}.` };
-        }
-      } else {
-        lat = itemData.latitude;
-        lng = itemData.longitude;
-        name = itemData.name;
-      }
-
+      const { latitude: lat, longitude: lng, name } = itemData;
       const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}&query_place_id=&query=${encodeURIComponent(name)}`;
       
       SessionManager.delete(sessionId);
@@ -671,7 +562,7 @@ app.post('/dialogflow-proxy', async (req, res) => {
 });
 
 // ============================
-// DIALOGFLOW RESPONSE PROCESSING (AVEC ACTIVITÉS)
+// DIALOGFLOW RESPONSE PROCESSING (AVEC 5 INTENTS ACTIVITÉS)
 // ============================
 
 async function processDialogflowResponse(queryResult, sessionId) {
@@ -703,14 +594,12 @@ async function processDialogflowResponse(queryResult, sessionId) {
       'Ask_Amenities_By_City': () => IntentHandlers.handleAmenitiesByCity(sessionId, parameters.city_names || parameters.city || parameters['geo-city'] || parameters.name),
       'Ask_Amenity_Details': () => IntentHandlers.handleAmenityDetails(sessionId, parameters['amenity-name'] || parameters.name),
 
-      // Activity intents
+      // Activity intents - SEULEMENT 5
       'Ask_All_Activities': () => IntentHandlers.handleAllActivities(sessionId),
       'Ask_Adventure_Activities': () => IntentHandlers.handleAdventureActivities(sessionId),
       'Ask_Sportive_Activities': () => IntentHandlers.handleSportiveActivities(sessionId),
       'Ask_Cultural_Activities': () => IntentHandlers.handleCulturalActivities(sessionId),
       'Ask_Traditional_Activities': () => IntentHandlers.handleTraditionalActivities(sessionId),
-      'Ask_Activities_By_City': () => IntentHandlers.handleActivitiesByCity(sessionId, parameters.city_names || parameters.city || parameters['geo-city'] || parameters.name),
-      'Ask_Activity_Details': () => IntentHandlers.handleActivityDetails(sessionId, parameters['activity-name'] || parameters.name),
 
       // Shared intents
       'Pagination_ShowMore': () => IntentHandlers.handleShowMore(sessionId),
